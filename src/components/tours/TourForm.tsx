@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -44,6 +45,18 @@ interface TourFormProps {
   tourId: string | null; // null for create, string for edit
 }
 
+const isPotentiallyValidSrc = (url: string | undefined | null): url is string => {
+  if (!url || url.trim() === "") {
+    return false;
+  }
+  return (
+    url.startsWith("data:image") ||
+    url.startsWith("http://") ||
+    url.startsWith("https://") ||
+    url.startsWith("/")
+  );
+};
+
 export function TourForm({ tourId }: TourFormProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -69,6 +82,7 @@ export function TourForm({ tourId }: TourFormProps) {
   });
 
   const watchedSteps = watch("steps");
+  const watchedThumbnailUrl = watch("thumbnailUrl");
 
   useEffect(() => {
     if (tourId) {
@@ -204,9 +218,9 @@ export function TourForm({ tourId }: TourFormProps) {
                 placeholder="https://example.com/image.png or leave blank for default" 
             />
             {errors.thumbnailUrl && <p className="text-sm text-destructive mt-1">{errors.thumbnailUrl.message}</p>}
-            {watch("thumbnailUrl") && (
+            {isPotentiallyValidSrc(watchedThumbnailUrl) && (
                  <Image 
-                    src={watch("thumbnailUrl")!} 
+                    src={watchedThumbnailUrl} 
                     alt="Thumbnail preview" 
                     width={200} height={120} 
                     className="mt-2 rounded object-cover"
@@ -223,7 +237,9 @@ export function TourForm({ tourId }: TourFormProps) {
           <CardDescription>Add, edit, and reorder the steps for your interactive tour.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {fields.map((field, index) => (
+          {fields.map((field, index) => {
+            const stepImageUrl = watchedSteps[index]?.imageUrl;
+            return (
             <Card key={field.id} className="bg-background/50">
               <CardContent className="p-4 space-y-3">
                 <div className="flex justify-between items-center">
@@ -252,9 +268,9 @@ export function TourForm({ tourId }: TourFormProps) {
                   <Label htmlFor={`steps.${index}.imageUrl`}>Image URL</Label>
                   <Input id={`steps.${index}.imageUrl`} {...register(`steps.${index}.imageUrl`)} className="mt-1" placeholder="https://placehold.co/800x600.png"/>
                   {errors.steps?.[index]?.imageUrl && <p className="text-sm text-destructive mt-1">{errors.steps[index]?.imageUrl?.message}</p>}
-                  {watchedSteps[index]?.imageUrl && (
+                  {isPotentiallyValidSrc(stepImageUrl) && (
                     <Image 
-                        src={watchedSteps[index].imageUrl} 
+                        src={stepImageUrl} 
                         alt={`Step ${index + 1} preview`} 
                         width={300} height={180} 
                         className="mt-2 rounded object-cover border"
@@ -270,7 +286,7 @@ export function TourForm({ tourId }: TourFormProps) {
                 {/* <AnnotationPlaceholder tourId={tourId} stepId={field.id} /> */}
               </CardContent>
             </Card>
-          ))}
+          )})}
           {errors.steps && !errors.steps.root && typeof errors.steps.message === 'string' && <p className="text-sm text-destructive mt-1">{errors.steps.message}</p>}
 
           <Button type="button" variant="outline" onClick={handleAddStep}>
@@ -304,3 +320,4 @@ export function TourForm({ tourId }: TourFormProps) {
     </form>
   );
 }
+
