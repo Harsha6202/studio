@@ -33,22 +33,38 @@ export function ScreenRecorder() {
       setIsStreaming(true);
       setRecordedVideoUrl(null); // Clear previous recording
       setRecordedChunks([]);
-      toast({ title: "Screen Share Started", description: "Live preview active." });
+      toast({ title: "Screen Share Started", description: "Live preview active. Select a window/tab to record." });
 
       // Handle when user stops sharing via browser UI
       stream.getVideoTracks()[0].onended = () => {
         stopScreenShare();
       };
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error accessing screen share:', error);
       setHasPermission(false);
       setIsStreaming(false);
-      toast({
-        variant: 'destructive',
-        title: 'Screen Share Access Denied',
-        description: 'Please enable screen sharing permissions and try again.',
-      });
+      if (error.name === 'NotAllowedError') {
+         toast({
+          variant: 'destructive',
+          title: 'Screen Share Access Denied',
+          description: 'You denied permission for screen sharing. Please enable it if you want to use this feature.',
+        });
+      } else if (error.message && (error.message.includes("disallowed by permissions policy") || error.message.includes("display-capture"))) {
+        toast({
+          variant: 'destructive',
+          title: 'Screen Share Blocked by Policy',
+          description: 'Screen sharing is disallowed by the current environment (e.g., iframe policy). This feature should work in a standalone deployment.',
+          duration: 10000, // Longer duration for this informative message
+        });
+      }
+      else {
+        toast({
+          variant: 'destructive',
+          title: 'Screen Share Error',
+          description: error.message || 'Could not start screen sharing. Please check browser permissions.',
+        });
+      }
     }
   };
 
@@ -59,18 +75,22 @@ export function ScreenRecorder() {
     if (videoPreviewRef.current) {
       videoPreviewRef.current.srcObject = null;
     }
-    if (isRecording) { // If recording, stop it as well
+    if (isRecording) { 
       handleStopRecording();
     }
     setIsStreaming(false);
-    setHasPermission(null);
+    // setHasPermission(null); // Keep permission state unless explicitly revoked or errored
     toast({ title: "Screen Share Stopped" });
-  }, [isRecording]); // Added isRecording dependency
+  }, [isRecording]); // Removed handleStopRecording from deps to avoid potential loops, it's called directly.
   
   useEffect(() => {
+    // Cleanup function to stop tracks if component unmounts
     return () => {
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop();
       }
     };
   }, []);
@@ -83,47 +103,50 @@ export function ScreenRecorder() {
     setRecordedChunks([]);
     setRecordedVideoUrl(null);
     
-    // Determine MIME type - prefer vp9 if available, else default
-    const options = { mimeType: 'video/webm; codecs=vp9' };
-    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-      // console.log(options.mimeType + ' is not Supported');
-      options.mimeType = 'video/webm; codecs=vp8';
-      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-        // console.log(options.mimeType + ' is not Supported');
-        options.mimeType = 'video/webm'; // Fallback to generic webm
-         if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-          // console.log(options.mimeType + ' is not Supported');
-          toast({ title: "Recording Error", description: "No supported video/webm codec found.", variant: "destructive" });
-          return;
+    const mimeTypes = [
+        'video/webm; codecs=vp9,opus',
+        'video/webm; codecs=vp9',
+        'video/webm; codecs=vp8,opus',
+        'video/webm; codecs=vp8',
+        'video/webm',
+        'video/mp4', // MP4 might be an option if webm isn't well supported by a target, but often needs specific browser flags or isn't as standard for MediaRecorder
+    ];
+    
+    let selectedMimeType = '';
+    for (const mimeType of mimeTypes) {
+        if (MediaRecorder.isTypeSupported(mimeType)) {
+            selectedMimeType = mimeType;
+            break;
         }
-      }
     }
 
+    if (!selectedMimeType) {
+        toast({ title: "Recording Error", description: "No supported video MIME type found for recording.", variant: "destructive" });
+        return;
+    }
+    // console.log("Using MIME type for recording:", selectedMimeType);
+
     try {
-        mediaRecorderRef.current = new MediaRecorder(mediaStreamRef.current, options);
+        mediaRecorderRef.current = new MediaRecorder(mediaStreamRef.current, { mimeType: selectedMimeType });
         mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
             setRecordedChunks((prev) => [...prev, event.data]);
         }
         };
-        mediaRecorderRef.current.onstop = () => {
-        // Handled by setRecordedChunks effect
-        };
         mediaRecorderRef.current.start();
         setIsRecording(true);
         toast({ title: "Screen Recording Started" });
-    } catch (e) {
+    } catch (e: any) {
         console.error("MediaRecorder error: ", e);
-        toast({ title: "Recording Failed", description: "Could not start MediaRecorder.", variant: "destructive" });
+        toast({ title: "Recording Failed", description: e.message || "Could not start MediaRecorder.", variant: "destructive" });
     }
   };
 
   useEffect(() => {
     if (!isRecording && recordedChunks.length > 0) {
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const blob = new Blob(recordedChunks, { type: mediaRecorderRef.current?.mimeType || 'video/webm' });
         const url = URL.createObjectURL(blob);
         setRecordedVideoUrl(url);
-        // setRecordedChunks([]); // Clear chunks after blob creation
     }
   }, [isRecording, recordedChunks]);
 
@@ -132,6 +155,7 @@ export function ScreenRecorder() {
       mediaRecorderRef.current.stop();
     }
     setIsRecording(false);
+    // The useEffect above will handle blob creation once isRecording is false and chunks are available
     toast({ title: "Screen Recording Stopped" });
   };
 
@@ -139,10 +163,14 @@ export function ScreenRecorder() {
     if (recordedVideoUrl) {
       const a = document.createElement('a');
       a.href = recordedVideoUrl;
-      a.download = `screen-recording-${Date.now()}.webm`;
+      const extension = (mediaRecorderRef.current?.mimeType?.includes('mp4')) ? 'mp4' : 'webm';
+      a.download = `screen-recording-${Date.now()}.${extension}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      URL.revokeObjectURL(recordedVideoUrl); // Clean up Object URL
+      // setRecordedVideoUrl(null); // Optionally clear preview after download
+      // setRecordedChunks([]);
       toast({ title: "Recording Downloaded" });
     } else {
         toast({ title: "No Recording", description: "There is no recording to download.", variant: "destructive" });
@@ -150,10 +178,9 @@ export function ScreenRecorder() {
   };
 
   const handleUseRecording = () => {
-    // Placeholder for saving to Firebase Storage and using in TourForm
     if (recordedVideoUrl) {
       toast({ title: "Use Recording (Placeholder)", description: "This will eventually upload and link the recording to a tour step."});
-      // Example: pass `new Blob(recordedChunks, { type: 'video/webm' })` to an upload function
+      // Example: pass `new Blob(recordedChunks, { type: mediaRecorderRef.current?.mimeType })` to an upload function
     } else {
       toast({ title: "No Recording", description: "Record something first!", variant: "destructive" });
     }
@@ -166,22 +193,27 @@ export function ScreenRecorder() {
           <ScreenShare className="mr-2 h-5 w-5" /> Screen Recorder
         </CardTitle>
         <CardDescription>
-          Capture your product workflow. Start by enabling screen share access.
+          Capture your product workflow. Start by enabling screen share access. Recordings are in WebM format.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {!isStreaming && hasPermission === false && (
+        {hasPermission === false && !isStreaming && ( // Show only if explicitly denied and not streaming
           <Alert variant="destructive" className="mb-4">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Permission Denied</AlertTitle>
+            <AlertTitle>Permission Issue</AlertTitle>
             <AlertDescription>
-              StoryFlow needs access to your screen to record. Please enable permissions and try again.
+              StoryFlow needs access to your screen to record. Please check permissions or the browser console for more details.
             </AlertDescription>
           </Alert>
         )}
 
-        <div className="aspect-video bg-muted rounded-md mb-4 overflow-hidden">
+        <div className="aspect-video bg-muted rounded-md mb-4 overflow-hidden relative">
           <video ref={videoPreviewRef} className="w-full h-full object-contain" autoPlay muted playsInline />
+           {!isStreaming && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <p className="text-muted-foreground p-4 text-center">Screen share preview will appear here.</p>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -223,12 +255,7 @@ export function ScreenRecorder() {
             </div>
           </div>
         )}
-
-         <p className="text-xs text-muted-foreground mt-4">
-            Note: This feature uses your browser's built-in screen sharing and recording capabilities. The recorded video will be in WebM format.
-          </p>
       </CardContent>
     </Card>
   );
 }
-
