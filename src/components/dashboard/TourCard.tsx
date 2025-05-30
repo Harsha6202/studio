@@ -3,7 +3,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Edit, Trash2, Share2, Eye, MoreVertical, Clock } from 'lucide-react';
+import { Edit, Trash2, Share2, Eye, MoreVertical, Clock, ImageOff } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -37,6 +37,8 @@ interface TourCardProps {
 export function TourCard({ tour, viewMode = 'grid' }: TourCardProps) {
   const { deleteTour } = useTourStore();
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
+  const [listImageError, setListImageError] = useState(false);
+  const [gridImageError, setGridImageError] = useState(false);
 
   const handleDelete = () => {
     deleteTour(tour.id);
@@ -47,22 +49,27 @@ export function TourCard({ tour, viewMode = 'grid' }: TourCardProps) {
   const defaultGridPlaceholder = `https://placehold.co/600x400.png`;
   const defaultListPlaceholder = `https://placehold.co/300x200.png`;
 
-  const thumbnailUrlGrid = isPotentiallyValidMediaSrc(tour.thumbnailUrl) ? tour.thumbnailUrl : defaultGridPlaceholder;
-  const thumbnailUrlList = isPotentiallyValidMediaSrc(tour.thumbnailUrl) ? tour.thumbnailUrl : defaultListPlaceholder;
+  const thumbnailUrlGrid = gridImageError || !isPotentiallyValidMediaSrc(tour.thumbnailUrl) ? defaultGridPlaceholder : tour.thumbnailUrl;
+  const thumbnailUrlList = listImageError || !isPotentiallyValidMediaSrc(tour.thumbnailUrl) ? defaultListPlaceholder : tour.thumbnailUrl;
 
 
   if (viewMode === 'list') {
     return (
       <Card className="flex flex-col md:flex-row w-full hover:shadow-lg transition-shadow duration-200">
-        <div className="md:w-1/4 relative h-48 md:h-auto">
-          <Image
-            src={thumbnailUrlList}
-            alt={tour.title}
-            layout="fill"
-            objectFit="cover"
-            className="rounded-t-lg md:rounded-l-lg md:rounded-t-none"
-            data-ai-hint="product screenshot"
-          />
+        <div className="md:w-1/4 relative h-48 md:h-auto bg-muted flex items-center justify-center">
+          {listImageError ? (
+            <ImageOff className="h-16 w-16 text-muted-foreground" />
+          ) : (
+            <Image
+              src={thumbnailUrlList!}
+              alt={tour.title}
+              layout="fill"
+              objectFit="cover"
+              className="rounded-t-lg md:rounded-l-lg md:rounded-t-none"
+              data-ai-hint="product screenshot"
+              onError={() => setListImageError(true)}
+            />
+          )}
         </div>
         <div className="md:w-3/4 flex flex-col">
           <CardHeader className="pb-2">
@@ -127,15 +134,20 @@ export function TourCard({ tour, viewMode = 'grid' }: TourCardProps) {
   return (
     <Card className="flex flex-col h-full hover:shadow-lg transition-shadow duration-200">
       <CardHeader className="relative p-0">
-        <Link href={`/tours/${tour.id}/edit`} className="block">
-          <Image
-            src={thumbnailUrlGrid}
-            alt={tour.title}
-            width={600}
-            height={400}
-            className="rounded-t-lg object-cover aspect-[3/2]"
-            data-ai-hint="product ui"
-          />
+        <Link href={`/tours/${tour.id}/edit`} className="block aspect-[3/2] bg-muted flex items-center justify-center">
+          {gridImageError ? (
+            <ImageOff className="h-20 w-20 text-muted-foreground" />
+          ) : (
+            <Image
+              src={thumbnailUrlGrid!}
+              alt={tour.title}
+              width={600}
+              height={400}
+              className="rounded-t-lg object-cover w-full h-full"
+              data-ai-hint="product ui"
+              onError={() => setGridImageError(true)}
+            />
+          )}
         </Link>
         <div className="absolute top-2 right-2">
           <DropdownMenu>
@@ -201,5 +213,3 @@ export function TourCard({ tour, viewMode = 'grid' }: TourCardProps) {
     </Card>
   );
 }
-
-    
