@@ -1,9 +1,10 @@
+
 // src/components/tours/ScreenRecorder.tsx
 "use client";
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Video, VideoOff, Camera, AlertCircle, CircleDot, Square } from 'lucide-react';
+import { ScreenShare, ScreenShareOff, AlertCircle, CircleDot, Square, Download, Film } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -12,48 +13,60 @@ export function ScreenRecorder() {
   const { toast } = useToast();
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [isRecording, setIsRecording] = useState(false); // Placeholder state
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
+  const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
+  
+  const videoPreviewRef = useRef<HTMLVideoElement>(null);
+  const recordedVideoRef = useRef<HTMLVideoElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
-  const requestPermissions = async () => {
+  const requestPermissionsAndStartStream = async () => {
     try {
-      // You can change { video: true } to getDisplayMedia for screen recording
-      // const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       mediaStreamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream;
       }
       setHasPermission(true);
       setIsStreaming(true);
-      toast({ title: "Camera Access Granted", description: "Preview started." });
+      setRecordedVideoUrl(null); // Clear previous recording
+      setRecordedChunks([]);
+      toast({ title: "Screen Share Started", description: "Live preview active." });
+
+      // Handle when user stops sharing via browser UI
+      stream.getVideoTracks()[0].onended = () => {
+        stopScreenShare();
+      };
+
     } catch (error) {
-      console.error('Error accessing media devices:', error);
+      console.error('Error accessing screen share:', error);
       setHasPermission(false);
       setIsStreaming(false);
       toast({
         variant: 'destructive',
-        title: 'Media Access Denied',
-        description: 'Please enable camera/screen permissions in your browser settings.',
+        title: 'Screen Share Access Denied',
+        description: 'Please enable screen sharing permissions and try again.',
       });
     }
   };
 
-  const stopStreaming = () => {
+  const stopScreenShare = useCallback(() => {
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
     }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
+    if (videoPreviewRef.current) {
+      videoPreviewRef.current.srcObject = null;
+    }
+    if (isRecording) { // If recording, stop it as well
+      handleStopRecording();
     }
     setIsStreaming(false);
-    setHasPermission(null); // Reset permission state to allow trying again
-    // setIsRecording(false); // Stop recording if it was active
-    toast({ title: "Preview Stopped" });
-  };
+    setHasPermission(null);
+    toast({ title: "Screen Share Stopped" });
+  }, [isRecording]); // Added isRecording dependency
   
-  // Cleanup stream on component unmount
   useEffect(() => {
     return () => {
       if (mediaStreamRef.current) {
@@ -63,30 +76,97 @@ export function ScreenRecorder() {
   }, []);
 
   const handleStartRecording = () => {
-    // Placeholder for actual recording logic
-    setIsRecording(true);
-    toast({ title: "Recording Started (Mock)" });
+    if (!mediaStreamRef.current || !mediaStreamRef.current.active) {
+      toast({ title: "No active screen share", description: "Please start screen sharing first.", variant: "destructive" });
+      return;
+    }
+    setRecordedChunks([]);
+    setRecordedVideoUrl(null);
+    
+    // Determine MIME type - prefer vp9 if available, else default
+    const options = { mimeType: 'video/webm; codecs=vp9' };
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+      // console.log(options.mimeType + ' is not Supported');
+      options.mimeType = 'video/webm; codecs=vp8';
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        // console.log(options.mimeType + ' is not Supported');
+        options.mimeType = 'video/webm'; // Fallback to generic webm
+         if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+          // console.log(options.mimeType + ' is not Supported');
+          toast({ title: "Recording Error", description: "No supported video/webm codec found.", variant: "destructive" });
+          return;
+        }
+      }
+    }
+
+    try {
+        mediaRecorderRef.current = new MediaRecorder(mediaStreamRef.current, options);
+        mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+            setRecordedChunks((prev) => [...prev, event.data]);
+        }
+        };
+        mediaRecorderRef.current.onstop = () => {
+        // Handled by setRecordedChunks effect
+        };
+        mediaRecorderRef.current.start();
+        setIsRecording(true);
+        toast({ title: "Screen Recording Started" });
+    } catch (e) {
+        console.error("MediaRecorder error: ", e);
+        toast({ title: "Recording Failed", description: "Could not start MediaRecorder.", variant: "destructive" });
+    }
   };
+
+  useEffect(() => {
+    if (!isRecording && recordedChunks.length > 0) {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        setRecordedVideoUrl(url);
+        // setRecordedChunks([]); // Clear chunks after blob creation
+    }
+  }, [isRecording, recordedChunks]);
 
   const handleStopRecording = () => {
-    // Placeholder
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
     setIsRecording(false);
-    toast({ title: "Recording Stopped (Mock)" });
+    toast({ title: "Screen Recording Stopped" });
   };
 
-  const handleSaveRecording = () => {
-    // Placeholder for saving to Firebase Storage
-    toast({ title: "Save Recording (Mock)", description: "This will eventually save to Firebase Storage."});
+  const handleDownloadRecording = () => {
+    if (recordedVideoUrl) {
+      const a = document.createElement('a');
+      a.href = recordedVideoUrl;
+      a.download = `screen-recording-${Date.now()}.webm`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast({ title: "Recording Downloaded" });
+    } else {
+        toast({ title: "No Recording", description: "There is no recording to download.", variant: "destructive" });
+    }
+  };
+
+  const handleUseRecording = () => {
+    // Placeholder for saving to Firebase Storage and using in TourForm
+    if (recordedVideoUrl) {
+      toast({ title: "Use Recording (Placeholder)", description: "This will eventually upload and link the recording to a tour step."});
+      // Example: pass `new Blob(recordedChunks, { type: 'video/webm' })` to an upload function
+    } else {
+      toast({ title: "No Recording", description: "Record something first!", variant: "destructive" });
+    }
   }
 
   return (
     <Card className="mt-6 border-border">
       <CardHeader>
         <CardTitle className="text-lg flex items-center">
-          <Camera className="mr-2 h-5 w-5" /> Screen/Camera Recorder
+          <ScreenShare className="mr-2 h-5 w-5" /> Screen Recorder
         </CardTitle>
         <CardDescription>
-          Capture your product workflow. Start by enabling camera/screen access.
+          Capture your product workflow. Start by enabling screen share access.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -95,23 +175,23 @@ export function ScreenRecorder() {
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Permission Denied</AlertTitle>
             <AlertDescription>
-              StoryFlow needs access to your camera or screen to record. Please enable permissions in your browser settings and try again.
+              StoryFlow needs access to your screen to record. Please enable permissions and try again.
             </AlertDescription>
           </Alert>
         )}
 
         <div className="aspect-video bg-muted rounded-md mb-4 overflow-hidden">
-          <video ref={videoRef} className="w-full h-full object-contain" autoPlay muted playsInline />
+          <video ref={videoPreviewRef} className="w-full h-full object-contain" autoPlay muted playsInline />
         </div>
 
         <div className="flex flex-wrap gap-2">
           {!isStreaming ? (
-            <Button type="button" onClick={requestPermissions}>
-              <Video className="mr-2 h-5 w-5" /> Enable Camera & Start Preview
+            <Button type="button" onClick={requestPermissionsAndStartStream}>
+              <ScreenShare className="mr-2 h-5 w-5" /> Enable Screen Share & Preview
             </Button>
           ) : (
-            <Button type="button" variant="outline" onClick={stopStreaming}>
-              <VideoOff className="mr-2 h-5 w-5" /> Stop Preview
+            <Button type="button" variant="outline" onClick={stopScreenShare}>
+              <ScreenShareOff className="mr-2 h-5 w-5" /> Stop Screen Share
             </Button>
           )}
 
@@ -125,16 +205,30 @@ export function ScreenRecorder() {
               <Square className="mr-2 h-5 w-5" /> Stop Recording
             </Button>
           )}
-          {isStreaming && ( // Could be shown after recording stops
-            <Button type="button" onClick={handleSaveRecording} variant="outline" disabled={isRecording}>
-              Save Recording
-            </Button>
-          )}
         </div>
-         <p className="text-xs text-muted-foreground mt-3">
-            Note: For actual screen recording, `getDisplayMedia` API would be used. This example uses `getUserMedia` for camera access as a starting point. Full recording and upload functionality will be added next.
+
+        {recordedVideoUrl && (
+          <div className="mt-6 space-y-4">
+            <h3 className="text-md font-semibold flex items-center"><Film className="mr-2 h-5 w-5" /> Recorded Video Preview</h3>
+            <div className="aspect-video bg-muted rounded-md overflow-hidden">
+                 <video ref={recordedVideoRef} src={recordedVideoUrl} controls className="w-full h-full object-contain" />
+            </div>
+            <div className="flex flex-wrap gap-2">
+                <Button type="button" onClick={handleDownloadRecording} variant="outline">
+                    <Download className="mr-2 h-5 w-5" /> Download Recording
+                </Button>
+                <Button type="button" onClick={handleUseRecording} variant="default">
+                    Use this Recording (Placeholder)
+                </Button>
+            </div>
+          </div>
+        )}
+
+         <p className="text-xs text-muted-foreground mt-4">
+            Note: This feature uses your browser's built-in screen sharing and recording capabilities. The recorded video will be in WebM format.
           </p>
       </CardContent>
     </Card>
   );
 }
+
