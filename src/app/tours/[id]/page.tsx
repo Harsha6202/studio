@@ -1,3 +1,4 @@
+
 "use client";
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -11,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
+import { inferIsVideoUrl, isPotentiallyValidMediaSrc } from '@/lib/utils';
 
 export default function ViewTourPage() {
   const params = useParams();
@@ -72,6 +74,8 @@ export default function ViewTourPage() {
   }
 
   const currentStep = tour.steps.sort((a,b) => a.order - b.order)[currentStepIndex];
+  const stepMediaUrl = currentStep?.imageUrl;
+  const stepMediaType = currentStep?.mediaType || (inferIsVideoUrl(stepMediaUrl) ? 'video' : 'image');
 
   const handleNextStep = () => {
     if (currentStepIndex < tour.steps.length - 1) {
@@ -124,15 +128,31 @@ export default function ViewTourPage() {
           </CardHeader>
           
           <CardContent className="p-0">
-            <div className="aspect-video w-full relative bg-muted/50">
-              <Image
-                src={currentStep.imageUrl || "https://placehold.co/1280x720.png?text=Step+Image"}
-                alt={currentStep.title}
-                layout="fill"
-                objectFit="contain" // Use 'contain' to see whole image, 'cover' to fill
-                priority={currentStepIndex === 0} // Prioritize loading first image
-                data-ai-hint="app screenshot"
-              />
+            <div className="aspect-video w-full relative bg-muted/50 flex items-center justify-center">
+              {!isPotentiallyValidMediaSrc(stepMediaUrl) ? (
+                <div className="text-muted-foreground">No media for this step.</div>
+              ) : stepMediaType === 'video' ? (
+                <video
+                  src={stepMediaUrl}
+                  controls
+                  autoPlay
+                  muted // Good for autoplay UX
+                  className="w-full h-full object-contain"
+                  key={stepMediaUrl} // Re-render if src changes
+                >
+                  Your browser does not support the video tag.
+                </video>
+              ) : (
+                <Image
+                  src={stepMediaUrl || "https://placehold.co/1280x720.png?text=Step+Image"}
+                  alt={currentStep.title}
+                  fill // Changed from layout="fill" to fill
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" // Example sizes, adjust as needed
+                  className="object-contain" // Changed from objectFit="contain"
+                  priority={currentStepIndex === 0}
+                  data-ai-hint="app screenshot"
+                />
+              )}
               {/* Annotations overlay can be added here */}
               {currentStep.annotations?.map(annotation => (
                   <div 

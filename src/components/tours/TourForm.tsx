@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useTourStore } from '@/hooks/useTourStore';
-import type { Tour, TourStep } from '@/lib/types';
+import type { Tour, TourStep, MediaType } from '@/lib/types';
 import { AIHelper } from './AIHelper';
 // import { StepList } from './StepList'; // StepList integrated below
 import { ScreenRecorder } from './ScreenRecorder'; // Updated import
@@ -22,12 +22,14 @@ import { Save, PlusCircle, Trash2, ArrowUp, ArrowDown, Eye } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
 import Link from 'next/link';
+import { inferIsVideoUrl, isPotentiallyValidMediaSrc } from '@/lib/utils';
 
 const tourStepSchema = z.object({
   id: z.string().optional(), // Existing steps will have an ID
   title: z.string().min(1, "Step title is required"),
   description: z.string().optional(),
-  imageUrl: z.string().url("Must be a valid URL").or(z.string().startsWith("data:image")).or(z.literal("")),
+  imageUrl: z.string().url("Must be a valid URL or data URI").or(z.string().startsWith("data:")).or(z.string().startsWith("blob:")).or(z.literal("")),
+  mediaType: z.enum(['image', 'video']).optional(),
   order: z.number(),
   // Annotations can be added later if complex schema is needed
 });
@@ -44,18 +46,6 @@ type TourFormData = z.infer<typeof tourFormSchema>;
 interface TourFormProps {
   tourId: string | null; // null for create, string for edit
 }
-
-const isPotentiallyValidSrc = (url: string | undefined | null): url is string => {
-  if (!url || url.trim() === "") {
-    return false;
-  }
-  return (
-    url.startsWith("data:image") ||
-    url.startsWith("http://") ||
-    url.startsWith("https://") ||
-    url.startsWith("/")
-  );
-};
 
 export function TourForm({ tourId }: TourFormProps) {
   const router = useRouter();
@@ -93,30 +83,44 @@ export function TourForm({ tourId }: TourFormProps) {
           title: tour.title,
           description: tour.description,
           thumbnailUrl: tour.thumbnailUrl || '',
-          steps: tour.steps.sort((a,b) => a.order - b.order).map(step => ({ // ensure steps are ordered
-            id: step.id,
-            title: step.title,
-            description: step.description || '',
-            imageUrl: step.imageUrl,
-            order: step.order,
-          })),
+          steps: tour.steps.sort((a,b) => a.order - b.order).map(step => { // ensure steps are ordered
+            const imageUrl = step.imageUrl || '';
+            return {
+              id: step.id,
+              title: step.title,
+              description: step.description || '',
+              imageUrl: imageUrl,
+              mediaType: step.mediaType || (inferIsVideoUrl(imageUrl) ? 'video' : 'image'),
+              order: step.order,
+            };
+          }),
         });
       } else {
-        // Tour not found, redirect or show error
         toast({ title: "Error", description: "Tour not found.", variant: "destructive" });
         router.push('/dashboard');
       }
     } else {
-        // For new tours, add one default step
         if (fields.length === 0) {
-             append({ title: 'Step 1', description: '', imageUrl: `https://placehold.co/800x600.png?text=Step+1`, order: 0 });
+             append({ 
+               title: 'Step 1', 
+               description: '', 
+               imageUrl: `https://placehold.co/800x600.png?text=Step+1`, 
+               mediaType: 'image', 
+               order: 0 
+              });
         }
     }
   }, [tourId, getTourById, reset, toast, router, fields.length, append]);
 
   const onSubmit = (data: TourFormData) => {
     try {
-      if (tourId) { // Editing existing tour
+      const processedSteps = data.steps.map((step, index) => ({
+        ...step,
+        order: index, // Ensure order is sequential
+        mediaType: step.mediaType || (inferIsVideoUrl(step.imageUrl) ? 'video' : 'image'),
+      }));
+
+      if (tourId) { 
         const existingTour = getTourById(tourId);
         if (!existingTour) throw new Error("Tour not found for update");
 
@@ -124,45 +128,62 @@ export function TourForm({ tourId }: TourFormProps) {
           title: data.title, 
           description: data.description,
           thumbnailUrl: data.thumbnailUrl,
+          // steps will be handled by individual step operations
         });
 
-        // Update steps
-        data.steps.forEach((stepData, index) => {
-          const existingStep = existingTour.steps.find(s => s.id === stepData.id);
-          if (existingStep) { // Existing step
-            updateStepInTour(tourId, existingStep.id, { 
+        // Sync steps: update existing, add new, remove deleted
+        const newStepIds = new Set(processedSteps.filter(s => s.id).map(s => s.id));
+        existingTour.steps.forEach(existingStep => {
+          if (!newStepIds.has(existingStep.id)) {
+            deleteStepFromTour(tourId, existingStep.id);
+          }
+        });
+
+        processedSteps.forEach(stepData => {
+          if (stepData.id && existingTour.steps.find(s => s.id === stepData.id)) { 
+            updateStepInTour(tourId, stepData.id, { 
               title: stepData.title, 
               description: stepData.description, 
               imageUrl: stepData.imageUrl,
-              order: index // Ensure order is updated
+              mediaType: stepData.mediaType,
+              order: stepData.order 
             });
-          } else { // New step added during edit
+          } else { 
              addStepToTour(tourId, { 
               title: stepData.title, 
               description: stepData.description, 
               imageUrl: stepData.imageUrl,
+              mediaType: stepData.mediaType,
+              // order is handled by addStepToTour
             });
           }
         });
-        // Handle deleted steps
-        existingTour.steps.forEach(existingStep => {
-            if(!data.steps.find(s => s.id === existingStep.id)){
-                deleteStepFromTour(tourId, existingStep.id);
-            }
-        });
-
+        
         toast({ title: "Success", description: "Tour updated successfully!" });
-        setCurrentTour(getTourById(tourId) || null); // Refresh current tour state
-      } else { // Creating new tour
+        const refreshedTour = getTourById(tourId);
+        if (refreshedTour) {
+            setCurrentTour(refreshedTour);
+             // Manually re-sync form state if needed, especially for orders or newly added step IDs
+            reset({
+                ...refreshedTour,
+                steps: refreshedTour.steps.sort((a,b) => a.order - b.order).map(s => ({
+                    ...s,
+                    description: s.description || '',
+                    mediaType: s.mediaType || (inferIsVideoUrl(s.imageUrl) ? 'video' : 'image')
+                }))
+            });
+        }
+
+      } else { 
         const newTourData = {
           title: data.title,
           description: data.description || '',
           thumbnailUrl: data.thumbnailUrl || `https://placehold.co/600x400.png?text=${encodeURIComponent(data.title)}`,
-          steps: data.steps.map((step, index) => ({ ...step, order: index })), // Set initial order
+          steps: processedSteps, 
         };
         const createdTour = addTour(newTourData);
         toast({ title: "Success", description: "Tour created! You can now add more steps." });
-        router.push(`/tours/${createdTour.id}/edit`); // Redirect to edit page for the new tour
+        router.push(`/tours/${createdTour.id}/edit`); 
       }
     } catch (error) {
       toast({ title: "Error", description: (error as Error).message || "Failed to save tour.", variant: "destructive" });
@@ -171,7 +192,13 @@ export function TourForm({ tourId }: TourFormProps) {
 
   const handleAddStep = () => {
     const newOrder = fields.length;
-    append({ title: `Step ${newOrder + 1}`, description: '', imageUrl: `https://placehold.co/800x600.png?text=Step+${newOrder + 1}`, order: newOrder });
+    append({ 
+      title: `Step ${newOrder + 1}`, 
+      description: '', 
+      imageUrl: `https://placehold.co/800x600.png?text=Step+${newOrder + 1}`, 
+      mediaType: 'image', 
+      order: newOrder 
+    });
   };
   
   const handleMoveStep = (index: number, direction: 'up' | 'down') => {
@@ -179,14 +206,19 @@ export function TourForm({ tourId }: TourFormProps) {
     if (targetIndex >= 0 && targetIndex < fields.length) {
       move(index, targetIndex);
       // Update order for all steps after move
-      const newOrderedSteps = fields.map((field, idx) => ({...field, order: idx})); // This line is problematic for react-hook-form state
-      // Correct way to update order in form state:
-      setValue('steps', fields.map((f, i) => ({...f, order: i})).sort((a,b) => { // get current field values
-          if(a.order === index) return {...a, order: targetIndex};
-          if(a.order === targetIndex) return {...a, order: index};
-          return a;
-      }).map((f,i) => ({...f, order: i}))); // then re-map to update the form value for 'steps'
-
+      const newOrderedSteps = fields.map((_, idx) => {
+        const currentFields = watch('steps'); // get current form state
+        if (idx === index) return { ...currentFields[targetIndex], order: idx };
+        if (idx === targetIndex) return { ...currentFields[index], order: idx };
+        return { ...currentFields[idx], order: idx };
+      });
+      // Sort by new visual order then re-assign sequential order
+      const visuallyOrdered = Array.from(Array(fields.length).keys()).map(i => {
+         if (i === index) return fields[targetIndex];
+         if (i === targetIndex) return fields[index];
+         return fields[i];
+      });
+      setValue('steps', visuallyOrdered.map((step, newIdx) => ({...step, order: newIdx}) ));
     }
   };
 
@@ -222,7 +254,7 @@ export function TourForm({ tourId }: TourFormProps) {
                 placeholder="https://example.com/image.png or leave blank for default" 
             />
             {errors.thumbnailUrl && <p className="text-sm text-destructive mt-1">{errors.thumbnailUrl.message}</p>}
-            {isPotentiallyValidSrc(watchedThumbnailUrl) && (
+            {isPotentiallyValidMediaSrc(watchedThumbnailUrl) && (
                  <Image 
                     src={watchedThumbnailUrl} 
                     alt="Thumbnail preview" 
@@ -235,17 +267,18 @@ export function TourForm({ tourId }: TourFormProps) {
         </CardContent>
       </Card>
       
-      {/* Screen Recorder Section - Moved out of Tour Steps for general workflow capture */}
       <ScreenRecorder />
 
       <Card>
         <CardHeader>
           <CardTitle>Tour Steps</CardTitle>
-          <CardDescription>Add, edit, and reorder the steps for your interactive tour. Images uploaded here can also come from screen recordings.</CardDescription>
+          <CardDescription>Add, edit, and reorder the steps for your interactive tour. Media can be images or videos (e.g. from screen recordings).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {fields.map((field, index) => {
-            const stepImageUrl = watchedSteps[index]?.imageUrl;
+            const stepMediaUrl = watchedSteps[index]?.imageUrl;
+            const stepMediaType = watchedSteps[index]?.mediaType || (inferIsVideoUrl(stepMediaUrl) ? 'video' : 'image');
+            
             return (
             <Card key={field.id} className="bg-background/50">
               <CardContent className="p-4 space-y-3">
@@ -272,24 +305,47 @@ export function TourForm({ tourId }: TourFormProps) {
                   {errors.steps?.[index]?.title && <p className="text-sm text-destructive mt-1">{errors.steps[index]?.title?.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor={`steps.${index}.imageUrl`}>Image URL (or from recording)</Label>
-                  <Input id={`steps.${index}.imageUrl`} {...register(`steps.${index}.imageUrl`)} className="mt-1" placeholder="https://placehold.co/800x600.png"/>
+                  <Label htmlFor={`steps.${index}.imageUrl`}>Media URL (Image or Video)</Label>
+                  <Input 
+                    id={`steps.${index}.imageUrl`} 
+                    {...register(`steps.${index}.imageUrl`)} 
+                    className="mt-1" 
+                    placeholder="https://example.com/image.png or /video.mp4 or blob:..."
+                    onChange={(e) => {
+                        setValue(`steps.${index}.imageUrl`, e.target.value);
+                        setValue(`steps.${index}.mediaType`, inferIsVideoUrl(e.target.value) ? 'video' : 'image');
+                    }}
+                   />
                   {errors.steps?.[index]?.imageUrl && <p className="text-sm text-destructive mt-1">{errors.steps[index]?.imageUrl?.message}</p>}
-                  {isPotentiallyValidSrc(stepImageUrl) && (
-                    <Image 
-                        src={stepImageUrl} 
-                        alt={`Step ${index + 1} preview`} 
-                        width={300} height={180} 
-                        className="mt-2 rounded object-cover border"
-                        data-ai-hint="ui screenshot"
-                        onError={(e) => e.currentTarget.style.display='none'} />
+                  
+                  {isPotentiallyValidMediaSrc(stepMediaUrl) && (
+                    <div className="mt-2 border rounded overflow-hidden max-w-xs">
+                      {stepMediaType === 'video' ? (
+                        <video 
+                            src={stepMediaUrl} 
+                            controls 
+                            className="aspect-video w-full object-contain bg-muted"
+                            onError={(e) => (e.currentTarget as HTMLVideoElement).style.display='none'}
+                        >
+                            Your browser does not support the video tag.
+                        </video>
+                      ) : (
+                        <Image 
+                            src={stepMediaUrl} 
+                            alt={`Step ${index + 1} preview`} 
+                            width={300} height={180} 
+                            className="object-contain"
+                            data-ai-hint="ui screenshot"
+                            onError={(e) => (e.currentTarget as HTMLImageElement).style.display='none'} 
+                        />
+                      )}
+                    </div>
                   )}
                 </div>
                 <div>
                   <Label htmlFor={`steps.${index}.description`}>Step Description/Instructions</Label>
                   <Textarea id={`steps.${index}.description`} {...register(`steps.${index}.description`)} className="mt-1" rows={2} />
                 </div>
-                {/* Placeholder for annotations - could be a sub-component */}
                 {/* <AnnotationPlaceholder tourId={tourId} stepId={field.id} /> */}
               </CardContent>
             </Card>

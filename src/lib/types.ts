@@ -4,9 +4,12 @@ export interface Annotation {
   position: { x: number; y: number }; // Relative to image: 0.0 to 1.0
 }
 
+export type MediaType = 'image' | 'video';
+
 export interface TourStep {
   id: string;
-  imageUrl: string; // URL or data URI
+  imageUrl: string; // URL or data URI for image OR video
+  mediaType?: MediaType; // To explicitly distinguish between image and video
   title: string;
   description: string;
   order: number;

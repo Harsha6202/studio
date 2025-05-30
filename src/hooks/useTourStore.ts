@@ -1,8 +1,10 @@
+
 "use client";
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Tour, TourStep, Annotation } from '@/lib/types';
+import type { Tour, TourStep, Annotation, MediaType } from '@/lib/types';
+import { inferIsVideoUrl } from '@/lib/utils'; // Import the helper
 
 interface TourState {
   tours: Tour[];
@@ -30,14 +32,18 @@ export const useTourStore = create<TourState>()(
         const newTour: Tour = {
           id: generateId(),
           ...newTourData,
-          steps: (newTourData.steps || []).map((step, index) => ({
-            id: generateId(),
-            imageUrl: step.imageUrl || `https://placehold.co/800x600.png?text=Step+${index+1}`,
-            title: step.title || `Step ${index + 1}`,
-            description: step.description || '',
-            order: index,
-            annotations: (step.annotations || []).map(ann => ({ ...ann, id: generateId() })),
-          })),
+          steps: (newTourData.steps || []).map((step, index) => {
+            const imageUrl = step.imageUrl || `https://placehold.co/800x600.png?text=Step+${index + 1}`;
+            return {
+              id: generateId(),
+              imageUrl: imageUrl,
+              mediaType: step.mediaType || (inferIsVideoUrl(imageUrl) ? 'video' : 'image'),
+              title: step.title || `Step ${index + 1}`,
+              description: step.description || '',
+              order: index,
+              annotations: (step.annotations || []).map(ann => ({ ...ann, id: generateId() })),
+            };
+          }),
           isPublic: false,
           createdAt: now,
           updatedAt: now,
@@ -64,12 +70,14 @@ export const useTourStore = create<TourState>()(
         set((state) => ({
           tours: state.tours.map((tour) => {
             if (tour.id === tourId) {
+              const imageUrl = newStepData.imageUrl || `https://placehold.co/800x600.png?text=New+Step`;
               const newStep: TourStep = {
                 id: generateId(),
                 ...newStepData,
+                imageUrl: imageUrl,
+                mediaType: newStepData.mediaType || (inferIsVideoUrl(imageUrl) ? 'video' : 'image'),
                 order: tour.steps.length,
                 annotations: [],
-                 imageUrl: newStepData.imageUrl || `https://placehold.co/800x600.png?text=New+Step`,
               };
               return { ...tour, steps: [...tour.steps, newStep], updatedAt: new Date().toISOString() };
             }
@@ -83,9 +91,16 @@ export const useTourStore = create<TourState>()(
             if (tour.id === tourId) {
               return {
                 ...tour,
-                steps: tour.steps.map((step) =>
-                  step.id === stepId ? { ...step, ...updates } : step
-                ).sort((a, b) => a.order - b.order), // Re-sort if order changes
+                steps: tour.steps.map((step) => {
+                  if (step.id === stepId) {
+                    let finalUpdates = { ...updates };
+                    if (updates.imageUrl && typeof updates.mediaType === 'undefined') {
+                      finalUpdates.mediaType = inferIsVideoUrl(updates.imageUrl) ? 'video' : 'image';
+                    }
+                    return { ...step, ...finalUpdates };
+                  }
+                  return step;
+                }).sort((a, b) => a.order - b.order), // Re-sort if order changes
                 updatedAt: new Date().toISOString(),
               };
             }
