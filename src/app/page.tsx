@@ -1,4 +1,3 @@
-
 // src/app/page.tsx
 "use client"; // Required for useAuth hook
 
@@ -23,13 +22,13 @@ const features = [
   },
   {
     icon: <ScreenShare className="h-8 w-8 text-primary" />,
-    title: 'Screen Recorder (Soon)',
+    title: 'Screen Recorder',
     description: 'In-app screen recording to capture product workflows directly.',
   },
   {
     icon: <Edit3 className="h-8 w-8 text-primary" />,
     title: 'Visual Editor',
-    description: 'Intuitive drag-and-drop interface to reorder steps and edit annotations.',
+    description: 'Intuitive interface to reorder steps and edit annotations.',
   },
   {
     icon: <Share2 className="h-8 w-8 text-primary" />,
@@ -104,16 +103,16 @@ export default function LandingPage() {
               Create <span className="text-primary">Interactive</span> Product Demos, Effortlessly.
             </h1>
             <p className="text-xl md:text-2xl text-muted-foreground mb-10 max-w-3xl mx-auto">
-              StoryFlow helps you build engaging, step-by-step product tours that captivate your audience and drive adoption.
+              Our platform helps you build engaging, step-by-step product tours that captivate your audience and drive adoption.
             </p>
             <Button size="lg" asChild className="bg-primary hover:bg-primary/90 text-primary-foreground text-lg px-8 py-6">
               <Link href={user ? "/dashboard" : "/signup"}>Start Building Your Tour</Link>
             </Button>
             <div className="mt-16">
-               <Image 
-                src="https://placehold.co/1200x600.png" 
-                alt="StoryFlow App Showcase" 
-                width={1200} 
+               <Image
+                src="https://placehold.co/1200x600.png"
+                alt="Product Demo Platform Showcase"
+                width={1200}
                 height={600}
                 className="rounded-lg shadow-2xl mx-auto"
                 data-ai-hint="product interface"
@@ -125,7 +124,7 @@ export default function LandingPage() {
         {/* Features Section */}
         <section id="features" className="py-20 md:py-28">
           <div className="container mx-auto px-4">
-            <h2 className="text-4xl font-bold text-center mb-4">Why StoryFlow?</h2>
+            <h2 className="text-4xl font-bold text-center mb-4">Why Our Platform?</h2>
             <p className="text-xl text-muted-foreground text-center mb-16 max-w-2xl mx-auto">
               Unlock the power of interactive storytelling for your product.
             </p>
@@ -150,7 +149,7 @@ export default function LandingPage() {
           <div className="container mx-auto px-4 text-center">
             <h2 className="text-4xl font-bold mb-6">Ready to Tell Your Product's Story?</h2>
             <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-              Join StoryFlow today and transform how users experience your product.
+              Join today and transform how users experience your product.
             </p>
             <Button size="lg" asChild className="bg-accent hover:bg-accent/90 text-accent-foreground text-lg px-8 py-6">
               <Link href={user ? "/dashboard" : "/signup"}>Create Your First Demo Free</Link>
@@ -161,11 +160,9 @@ export default function LandingPage() {
 
       <footer className="py-8 border-t border-border">
         <div className="container mx-auto px-4 text-center text-muted-foreground">
-          &copy; {new Date().getFullYear()} StoryFlow. All rights reserved.
+          &copy; {new Date().getFullYear()} Product Demo Platform. All rights reserved.
         </div>
       </footer>
     </div>
   );
 }
-
-    

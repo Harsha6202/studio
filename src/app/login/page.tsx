@@ -66,7 +66,7 @@ export default function LoginPage() {
             <Logo className="h-12 w-auto mx-auto" />
           </Link>
           <CardTitle className="text-3xl">Welcome Back!</CardTitle>
-          <CardDescription>Sign in to access your StoryFlow dashboard.</CardDescription>
+          <CardDescription>Sign in to access your Product Demo dashboard.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">

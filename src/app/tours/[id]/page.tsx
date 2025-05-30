@@ -1,4 +1,4 @@
-
+// src/app/tours/[id]/page.tsx
 "use client";
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -19,7 +19,7 @@ export default function ViewTourPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { getTourById } = useTourStore();
-  
+
   const [tour, setTour] = useState<Tour | null | undefined>(undefined); // undefined for loading, null for not found
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [mounted, setMounted] = useState(false);
@@ -29,7 +29,7 @@ export default function ViewTourPage() {
   useEffect(() => {
     setMounted(true);
   }, []);
-  
+
   useEffect(() => {
     if (mounted && tourId) {
       const fetchedTour = getTourById(tourId as string);
@@ -37,7 +37,7 @@ export default function ViewTourPage() {
         setTour(fetchedTour);
       } else if (fetchedTour && !fetchedTour.isPublic) {
         setTour(null); // Tour exists but is private
-        toast({ title: "Access Denied", description: "This tour is private.", variant: "destructive"});
+        toast({ title: "Access Denied", description: "This demo is private.", variant: "destructive"});
       }
       else {
         setTour(null); // Tour not found
@@ -62,8 +62,8 @@ export default function ViewTourPage() {
   if (tour === null) {
     return (
       <div className="container mx-auto p-4 md:p-8 text-center max-w-2xl">
-        <h1 className="text-3xl font-bold text-destructive mb-4">Tour Not Available</h1>
-        <p className="text-muted-foreground mb-6">This tour either does not exist or is not publically accessible.</p>
+        <h1 className="text-3xl font-bold text-destructive mb-4">Demo Not Available</h1>
+        <p className="text-muted-foreground mb-6">This demo either does not exist or is not publically accessible.</p>
         <Button asChild variant="outline">
           <Link href="/dashboard">
             <Home className="mr-2 h-4 w-4" /> Go to Dashboard
@@ -93,14 +93,14 @@ export default function ViewTourPage() {
     if (navigator.share) {
       navigator.share({
         title: tour.title,
-        text: \`Check out this product tour: \${tour.title}\`,
+        text: `Check out this product demo: ${tour.title}`,
         url: window.location.href,
       })
       .then(() => toast({title: "Shared successfully!"}))
       .catch((error) => toast({title: "Share failed", description: error.message, variant: "destructive"}));
     } else {
       navigator.clipboard.writeText(window.location.href);
-      toast({title: "Link Copied!", description: "Tour link copied to clipboard."});
+      toast({title: "Link Copied!", description: "Demo link copied to clipboard."});
     }
   };
 
@@ -110,7 +110,7 @@ export default function ViewTourPage() {
         <div className="container mx-auto flex justify-between items-center max-w-5xl">
            <Button variant="outline" size="sm" asChild>
               <Link href="/dashboard">
-                <Home className="mr-2 h-4 w-4" /> StoryFlow Home
+                <Home className="mr-2 h-4 w-4" /> Demo Platform Home
               </Link>
             </Button>
           <h1 className="text-xl md:text-2xl font-semibold text-foreground truncate px-2" title={tour.title}>{tour.title}</h1>
@@ -127,7 +127,7 @@ export default function ViewTourPage() {
               <p className="text-sm text-muted-foreground">Step {currentStepIndex + 1} of {tour.steps.length}</p>
               <CardTitle className="text-2xl md:text-3xl mt-1">{currentStep.title}</CardTitle>
             </CardHeader>
-            
+
             <CardContent className="p-0">
               <div className="aspect-video w-full relative bg-muted/50 flex items-center justify-center">
                 {!isPotentiallyValidMediaSrc(stepMediaUrl) ? (
@@ -147,21 +147,21 @@ export default function ViewTourPage() {
                   <Image
                     src={stepMediaUrl || "https://placehold.co/1280x720.png"}
                     alt={currentStep.title}
-                    fill 
-                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" 
-                    className="object-contain" 
+                    fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    className="object-contain"
                     priority={currentStepIndex === 0}
                     data-ai-hint="app screenshot"
                   />
                 )}
                 {/* Annotations overlay can be added here */}
                 {(currentStep.annotations || []).map(annotation => (
-                    <div 
-                      key={annotation.id} 
+                    <div
+                      key={annotation.id}
                       className="absolute p-2 bg-black/70 text-white text-xs rounded shadow-lg"
-                      style={{ 
-                          left: \`\${annotation.position.x * 100}%\`, 
-                          top: \`\${annotation.position.y * 100}%\`,
+                      style={{
+                          left: `${annotation.position.x * 100}%`,
+                          top: `${annotation.position.y * 100}%`,
                           transform: 'translate(-50%, -50%)' // Adjust if position is top-left corner
                       }}
                       title={annotation.text}
@@ -193,14 +193,14 @@ export default function ViewTourPage() {
         </div>
 
         <Separator className="my-8" />
-        
+
         <div className="text-center">
-            <h2 className="text-2xl font-semibold mb-2">About this tour: {tour.title}</h2>
+            <h2 className="text-2xl font-semibold mb-2">About this demo: {tour.title}</h2>
             <p className="text-muted-foreground whitespace-pre-wrap max-w-2xl mx-auto">{tour.description}</p>
         </div>
       </main>
       <footer className="text-center p-4 text-sm text-muted-foreground border-t border-border/50">
-        Powered by StoryFlow
+        Powered by Product Demo Platform
       </footer>
     </div>
   );

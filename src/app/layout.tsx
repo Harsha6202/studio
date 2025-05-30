@@ -18,8 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'StoryFlow - Interactive Product Demos',
-  description: 'Create and share stunning interactive product demos with StoryFlow.',
+  title: 'Product Demo Platform - Interactive Demos',
+  description: 'Create and share stunning interactive product demos.',
 };
 
 export default function RootLayout({

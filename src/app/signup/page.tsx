@@ -48,7 +48,7 @@ export default function SignupPage() {
     setIsLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, data.email, data.password);
-      toast({ title: "Account Created", description: "Welcome to StoryFlow! Please log in." });
+      toast({ title: "Account Created", description: "Welcome! Please log in." });
       // Optionally, sign in the user automatically after signup
       // await signInWithEmailAndPassword(auth, data.email, data.password);
       router.push("/login"); // Redirect to login, or dashboard if auto-signed in
@@ -71,7 +71,7 @@ export default function SignupPage() {
             <Logo className="h-12 w-auto mx-auto" />
           </Link>
           <CardTitle className="text-3xl">Create Your Account</CardTitle>
-          <CardDescription>Join StoryFlow and start building amazing product demos.</CardDescription>
+          <CardDescription>Join our Product Demo Platform and start building amazing demos.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">

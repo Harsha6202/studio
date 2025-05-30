@@ -16,8 +16,15 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'firebasestorage.googleapis.com', // Allow images from Firebase Storage
+        port: '',
+        pathname: '/**',
+      }
     ],
   },
+  output: 'standalone', // Required for optimized Docker builds
 };
 
 export default nextConfig;

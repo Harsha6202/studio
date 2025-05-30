@@ -26,7 +26,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 const menuItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, requiresAuth: true },
-  { href: '/tours/create', label: 'Create Tour', icon: PlusCircle, requiresAuth: true },
+  { href: '/tours/create', label: 'Create Demo', icon: PlusCircle, requiresAuth: true },
   // { href: '/guides', label: 'Guides', icon: BookOpen, requiresAuth: false },
 ];
 
@@ -40,14 +40,14 @@ export function AppSidebar() {
     try {
       await signOut(auth);
       toast({ title: "Logged Out", description: "You have been successfully logged out." });
-      router.push('/login'); 
+      router.push('/login');
     } catch (error) {
       toast({ variant: "destructive", title: "Logout Failed", description: (error as Error).message });
     }
   };
-  
+
   const getInitials = (email?: string | null) => {
-    if (!email) return 'SF';
+    if (!email) return 'PD'; // Product Demo
     const parts = email.split('@')[0].split(/[._-]/);
     if (parts.length > 1) {
       return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -61,7 +61,7 @@ export function AppSidebar() {
       <SidebarHeader className="p-4 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 group-data-[collapsible=icon]:hidden">
           <Logo className="h-8 w-auto text-primary" />
-          <span className="font-semibold text-lg text-foreground">StoryFlow</span>
+          <span className="font-semibold text-lg text-foreground">Product Demo</span>
         </Link>
         <div className="md:hidden">
           <SidebarTrigger />

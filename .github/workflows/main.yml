@@ -1,0 +1,77 @@
+name: Node.js CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x] # Specify your Node.js version
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci # Use npm ci for faster, more reliable installs in CI
+
+    - name: Run linter
+      run: npm run lint
+
+    - name: Run type checker
+      run: npm run typecheck
+
+    - name: Build project
+      run: npm run build
+      # env:
+      #   NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+      # Add other build-time environment variables if needed
+
+    # Example: Archive production artifacts
+    # - name: Archive production artifacts
+    #   uses: actions/upload-artifact@v3
+    #   with:
+    #     name: .next-build
+    #     path: |
+    #       .next
+    #       package.json
+    #       # Add other files/folders needed for deployment
+
+  # Optional: Add a deployment job here
+  # deploy:
+  #   needs: build # Ensure build job completes successfully
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push' # Only deploy on push to main
+  #
+  #   steps:
+  #   - name: Checkout repository
+  #     uses: actions/checkout@v4
+  #
+  #   - name: Download build artifacts
+  #     uses: actions/download-artifact@v3
+  #     with:
+  #       name: .next-build
+  #       path: .
+  #
+  #   - name: Deploy to Firebase App Hosting (Example)
+  #     uses: firebase/actions/setup-gcloud@v0 # Or specific Firebase deploy action
+  #     with:
+  #       project_id: ${{ secrets.FIREBASE_PROJECT_ID }} # Store in GitHub Secrets
+  #       service_account_key: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY_JSON }} # Store in GitHub Secrets
+  #   - run: |
+  #       # npm install -g firebase-tools # if not using a specific action
+  #       firebase deploy --only hosting # or apphosting
+  #     env:
+  #       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }} # Alternative auth method for firebase-tools
