@@ -77,12 +77,7 @@ export function ScreenRecorder() {
         });
       } else if (error.message && (error.message.toLowerCase().includes("disallowed by permissions policy") || error.message.toLowerCase().includes("display-capture"))) {
         setScreenSharePolicyError(true); 
-        toast({
-          variant: 'destructive',
-          title: 'Screen Share Blocked by Policy',
-          description: 'Screen sharing is disallowed by the current environment (e.g., iframe policy in Firebase Studio). This feature should work when deployed to your own domain.',
-          duration: 10000,
-        });
+        // The toast for this specific error is now handled by the Alert component directly in the UI.
       }
       else {
         toast({
@@ -108,10 +103,11 @@ export function ScreenRecorder() {
       setIsRecording(false); 
     }
     setIsStreaming(false);
-    if (hasPermission && mediaStreamRef.current?.active === false) { 
-        // toast({ title: "Screen Share Stopped" }); 
+    // Only show "Screen Share Stopped" if it was active and not due to a policy error initial denial.
+    if (hasPermission && mediaStreamRef.current?.active === false && !screenSharePolicyError) { 
+        // toast({ title: "Screen Share Stopped" }); // Can be a bit noisy, consider removing or making conditional
     }
-  }, [isRecording, hasPermission, toast]); 
+  }, [isRecording, hasPermission, toast, screenSharePolicyError]); 
   
   useEffect(() => {
     return () => {
@@ -163,11 +159,7 @@ export function ScreenRecorder() {
         }
         };
         mediaRecorderRef.current.onstop = () => {
-             if (recordedChunks.length > 0) { 
-                const blob = new Blob(recordedChunks, { type: mediaRecorderRef.current?.mimeType || 'video/webm' });
-                const url = URL.createObjectURL(blob);
-                setRecordedVideoUrl(url);
-             }
+             // This logic is now handled by the useEffect below to ensure it runs after state updates.
         };
         mediaRecorderRef.current.start();
         setIsRecording(true);
@@ -221,7 +213,7 @@ export function ScreenRecorder() {
 
     setIsUploading(true);
     setUploadedVideoStorageUrl(null); 
-    toast({ title: "Uploading Recording...", description: "Please wait." });
+    toast({ title: "Uploading Recording...", description: "This may take a moment depending on video size and internet speed." });
 
     const blob = new Blob(recordedChunks, { type: mediaRecorderRef.current?.mimeType || 'video/webm' });
     const fileExtension = blob.type.split('/')[1]?.split(';')[0] || 'webm'; 
@@ -258,8 +250,8 @@ export function ScreenRecorder() {
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Screen Share Blocked by Environment Policy</AlertTitle>
             <AlertDescription>
-              Screen sharing is disallowed by the current browser environment (e.g., due to iframe security policies).
-              This is common in IDE previews like Firebase Studio. The feature should work as expected when the app is deployed to its own domain.
+              Screen sharing is disallowed by the current browser environment (e.g., due to iframe security policies in tools like Firebase Studio).
+              This feature should work as expected when the app is deployed to its own domain (e.g., on Vercel).
             </AlertDescription>
           </Alert>
         )}
@@ -269,7 +261,7 @@ export function ScreenRecorder() {
             <AlertTitle>Screen Share Permission Issue</AlertTitle>
             <AlertDescription>
               The Product Demo Platform needs access to your screen to record. You may have denied permission or another issue occurred.
-              Please check browser permissions or the console for more details.
+              Please check browser permissions or the console for more details. Click "Enable Screen Share" again to retry.
             </AlertDescription>
           </Alert>
         )}
