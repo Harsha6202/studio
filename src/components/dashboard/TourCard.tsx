@@ -26,6 +26,7 @@ import { useTourStore } from '@/hooks/useTourStore';
 import { PublishDialog } from '@/components/tours/PublishDialog';
 import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
+import { isPotentiallyValidMediaSrc } from '@/lib/utils';
 
 
 interface TourCardProps {
@@ -43,12 +44,19 @@ export function TourCard({ tour, viewMode = 'grid' }: TourCardProps) {
   
   const lastUpdated = tour.updatedAt ? formatDistanceToNow(new Date(tour.updatedAt), { addSuffix: true }) : 'N/A';
 
+  const defaultGridPlaceholder = `https://placehold.co/600x400.png`;
+  const defaultListPlaceholder = `https://placehold.co/300x200.png`;
+
+  const thumbnailUrlGrid = isPotentiallyValidMediaSrc(tour.thumbnailUrl) ? tour.thumbnailUrl : defaultGridPlaceholder;
+  const thumbnailUrlList = isPotentiallyValidMediaSrc(tour.thumbnailUrl) ? tour.thumbnailUrl : defaultListPlaceholder;
+
+
   if (viewMode === 'list') {
     return (
       <Card className="flex flex-col md:flex-row w-full hover:shadow-lg transition-shadow duration-200">
         <div className="md:w-1/4 relative h-48 md:h-auto">
           <Image
-            src={tour.thumbnailUrl || `https://placehold.co/300x200.png`}
+            src={thumbnailUrlList}
             alt={tour.title}
             layout="fill"
             objectFit="cover"
@@ -121,7 +129,7 @@ export function TourCard({ tour, viewMode = 'grid' }: TourCardProps) {
       <CardHeader className="relative p-0">
         <Link href={`/tours/${tour.id}/edit`} className="block">
           <Image
-            src={tour.thumbnailUrl || `https://placehold.co/600x400.png`}
+            src={thumbnailUrlGrid}
             alt={tour.title}
             width={600}
             height={400}
