@@ -93,7 +93,7 @@ export default function ViewTourPage() {
     if (navigator.share) {
       navigator.share({
         title: tour.title,
-        text: `Check out this product tour: ${tour.title}`,
+        text: \`Check out this product tour: \${tour.title}\`,
         url: window.location.href,
       })
       .then(() => toast({title: "Shared successfully!"}))
@@ -122,60 +122,62 @@ export default function ViewTourPage() {
 
       <main className="flex-grow container mx-auto p-4 md:p-8 max-w-4xl">
         <Card className="overflow-hidden shadow-2xl">
-          <CardHeader className="bg-card/50 p-4 md:p-6">
-            <p className="text-sm text-muted-foreground">Step {currentStepIndex + 1} of {tour.steps.length}</p>
-            <CardTitle className="text-2xl md:text-3xl mt-1">{currentStep.title}</CardTitle>
-          </CardHeader>
-          
-          <CardContent className="p-0">
-            <div className="aspect-video w-full relative bg-muted/50 flex items-center justify-center">
-              {!isPotentiallyValidMediaSrc(stepMediaUrl) ? (
-                <div className="text-muted-foreground">No media for this step.</div>
-              ) : stepMediaType === 'video' ? (
-                <video
-                  src={stepMediaUrl}
-                  controls
-                  autoPlay
-                  muted // Good for autoplay UX
-                  className="w-full h-full object-contain"
-                  key={stepMediaUrl} // Re-render if src changes
-                >
-                  Your browser does not support the video tag.
-                </video>
-              ) : (
-                <Image
-                  src={stepMediaUrl || "https://placehold.co/1280x720.png"}
-                  alt={currentStep.title}
-                  fill 
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" 
-                  className="object-contain" 
-                  priority={currentStepIndex === 0}
-                  data-ai-hint="app screenshot"
-                />
-              )}
-              {/* Annotations overlay can be added here */}
-              {(currentStep.annotations || []).map(annotation => (
-                  <div 
-                    key={annotation.id} 
-                    className="absolute p-2 bg-black/70 text-white text-xs rounded shadow-lg"
-                    style={{ 
-                        left: `${annotation.position.x * 100}%`, 
-                        top: `${annotation.position.y * 100}%`,
-                        transform: 'translate(-50%, -50%)' // Adjust if position is top-left corner
-                    }}
-                    title={annotation.text}
+          <div key={currentStepIndex} className="fade-in-step">
+            <CardHeader className="bg-card/50 p-4 md:p-6">
+              <p className="text-sm text-muted-foreground">Step {currentStepIndex + 1} of {tour.steps.length}</p>
+              <CardTitle className="text-2xl md:text-3xl mt-1">{currentStep.title}</CardTitle>
+            </CardHeader>
+            
+            <CardContent className="p-0">
+              <div className="aspect-video w-full relative bg-muted/50 flex items-center justify-center">
+                {!isPotentiallyValidMediaSrc(stepMediaUrl) ? (
+                  <div className="text-muted-foreground">No media for this step.</div>
+                ) : stepMediaType === 'video' ? (
+                  <video
+                    src={stepMediaUrl}
+                    controls
+                    autoPlay
+                    muted // Good for autoplay UX
+                    className="w-full h-full object-contain"
+                    key={stepMediaUrl} // Re-render if src changes
                   >
-                    {annotation.text.length > 30 ? annotation.text.substring(0,27) + "..." : annotation.text}
-                  </div>
-              ))}
-            </div>
-
-            {currentStep.description && (
-              <div className="p-4 md:p-6 border-t border-border">
-                <CardDescription className="text-base whitespace-pre-wrap">{currentStep.description}</CardDescription>
+                    Your browser does not support the video tag.
+                  </video>
+                ) : (
+                  <Image
+                    src={stepMediaUrl || "https://placehold.co/1280x720.png"}
+                    alt={currentStep.title}
+                    fill 
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" 
+                    className="object-contain" 
+                    priority={currentStepIndex === 0}
+                    data-ai-hint="app screenshot"
+                  />
+                )}
+                {/* Annotations overlay can be added here */}
+                {(currentStep.annotations || []).map(annotation => (
+                    <div 
+                      key={annotation.id} 
+                      className="absolute p-2 bg-black/70 text-white text-xs rounded shadow-lg"
+                      style={{ 
+                          left: \`\${annotation.position.x * 100}%\`, 
+                          top: \`\${annotation.position.y * 100}%\`,
+                          transform: 'translate(-50%, -50%)' // Adjust if position is top-left corner
+                      }}
+                      title={annotation.text}
+                    >
+                      {annotation.text.length > 30 ? annotation.text.substring(0,27) + "..." : annotation.text}
+                    </div>
+                ))}
               </div>
-            )}
-          </CardContent>
+
+              {currentStep.description && (
+                <div className="p-4 md:p-6 border-t border-border">
+                  <CardDescription className="text-base whitespace-pre-wrap">{currentStep.description}</CardDescription>
+                </div>
+              )}
+            </CardContent>
+          </div>
         </Card>
 
         <div className="mt-6 flex justify-between items-center">
@@ -203,5 +205,3 @@ export default function ViewTourPage() {
     </div>
   );
 }
-
-    
