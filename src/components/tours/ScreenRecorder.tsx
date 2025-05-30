@@ -4,30 +4,40 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { ScreenShare, ScreenShareOff, AlertCircle, CircleDot, Square, Download, Film } from 'lucide-react';
+import { ScreenShare, ScreenShareOff, AlertCircle, CircleDot, Square, Download, Film, UploadCloud, Copy, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { useAuth } from '@/contexts/AuthContext';
+import { storage } from '@/lib/firebase/client';
 
 export function ScreenRecorder() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
-  const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
-  const [screenSharePolicyError, setScreenSharePolicyError] = useState(false); // New state for specific policy error
+  const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null); // Blob URL for local preview
+  const [screenSharePolicyError, setScreenSharePolicyError] = useState(false);
   
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedVideoStorageUrl, setUploadedVideoStorageUrl] = useState<string | null>(null); // URL from Firebase Storage
+
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
   const recordedVideoRef = useRef<HTMLVideoElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   const requestPermissionsAndStartStream = async () => {
-    setHasPermission(null); // Reset permission state
-    setScreenSharePolicyError(false); // Reset policy error state on new attempt
+    setHasPermission(null);
+    setScreenSharePolicyError(false);
     setRecordedVideoUrl(null); 
     setRecordedChunks([]);
+    setUploadedVideoStorageUrl(null);
 
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
@@ -55,7 +65,7 @@ export function ScreenRecorder() {
           description: 'You denied permission for screen sharing. Please enable it if you want to use this feature.',
         });
       } else if (error.message && (error.message.toLowerCase().includes("disallowed by permissions policy") || error.message.toLowerCase().includes("display-capture"))) {
-        setScreenSharePolicyError(true); // Set specific policy error state
+        setScreenSharePolicyError(true);
         toast({
           variant: 'destructive',
           title: 'Screen Share Blocked by Policy',
@@ -87,7 +97,8 @@ export function ScreenRecorder() {
       setIsRecording(false);
     }
     setIsStreaming(false);
-    if (hasPermission) { 
+    // Only show "stopped" toast if it was actually permitted and streaming
+    if (hasPermission && mediaStreamRef.current?.active === false) { 
         toast({ title: "Screen Share Stopped" });
     }
   }, [isRecording, hasPermission, toast]); 
@@ -110,6 +121,7 @@ export function ScreenRecorder() {
     }
     setRecordedChunks([]);
     setRecordedVideoUrl(null);
+    setUploadedVideoStorageUrl(null);
     
     const mimeTypes = [
         'video/webm; codecs=vp9,opus',
@@ -117,7 +129,7 @@ export function ScreenRecorder() {
         'video/webm; codecs=vp8,opus',
         'video/webm; codecs=vp8',
         'video/webm',
-        'video/mp4',
+        'video/mp4', // Added for broader compatibility if browser supports
     ];
     
     let selectedMimeType = '';
@@ -153,7 +165,7 @@ export function ScreenRecorder() {
     if (!isRecording && recordedChunks.length > 0) {
         const blob = new Blob(recordedChunks, { type: mediaRecorderRef.current?.mimeType || 'video/webm' });
         const url = URL.createObjectURL(blob);
-        setRecordedVideoUrl(url);
+        setRecordedVideoUrl(url); // This is the local blob URL for preview
     }
   }, [isRecording, recordedChunks]);
 
@@ -174,20 +186,45 @@ export function ScreenRecorder() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(recordedVideoUrl); 
+      // URL.revokeObjectURL(recordedVideoUrl); // Don't revoke if still needed for upload
       toast({ title: "Recording Downloaded" });
     } else {
         toast({ title: "No Recording", description: "There is no recording to download.", variant: "destructive" });
     }
   };
 
-  const handleUseRecording = () => {
-    if (recordedVideoUrl) {
-      toast({ title: "Use Recording (Placeholder)", description: "This will eventually upload and link the recording to a tour step."});
-    } else {
+  const handleUploadAndUseRecording = async () => {
+    if (!recordedVideoUrl || recordedChunks.length === 0) {
       toast({ title: "No Recording", description: "Record something first!", variant: "destructive" });
+      return;
     }
-  }
+    if (!user) {
+      toast({ title: "Authentication Error", description: "You must be logged in to save recordings.", variant: "destructive" });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadedVideoStorageUrl(null);
+    toast({ title: "Uploading Recording...", description: "Please wait." });
+
+    const blob = new Blob(recordedChunks, { type: mediaRecorderRef.current?.mimeType || 'video/webm' });
+    const fileExtension = blob.type.split('/')[1] || 'webm';
+    const fileName = `screen-recording-${user.uid}-${Date.now()}.${fileExtension}`;
+    const sRef = storageRef(storage, `userRecordings/${user.uid}/${fileName}`);
+
+    try {
+      const snapshot = await uploadBytes(sRef, blob);
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      setUploadedVideoStorageUrl(downloadURL);
+      toast({ title: "Upload Successful!", description: "Recording uploaded." });
+    } catch (error: any) {
+      console.error("Error uploading to Firebase Storage:", error);
+      toast({ title: "Upload Failed", description: error.message || "Could not upload recording.", variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
 
   return (
     <Card className="mt-6 border-border">
@@ -196,7 +233,7 @@ export function ScreenRecorder() {
           <ScreenShare className="mr-2 h-5 w-5" /> Screen Recorder
         </CardTitle>
         <CardDescription>
-          Capture your product workflow. Start by enabling screen share access. Recordings are in WebM format.
+          Capture your product workflow. Start by enabling screen share access.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -254,16 +291,37 @@ export function ScreenRecorder() {
                  <video ref={recordedVideoRef} src={recordedVideoUrl} controls className="w-full h-full object-contain" />
             </div>
             <div className="flex flex-wrap gap-2">
-                <Button type="button" onClick={handleDownloadRecording} variant="outline">
+                <Button type="button" onClick={handleDownloadRecording} variant="outline" disabled={isUploading}>
                     <Download className="mr-2 h-5 w-5" /> Download Recording
                 </Button>
-                <Button type="button" onClick={handleUseRecording} variant="default">
-                    Use this Recording (Placeholder)
+                <Button type="button" onClick={handleUploadAndUseRecording} variant="default" disabled={isUploading || !user}>
+                     {isUploading ? (
+                        <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
+                    ) : (
+                        <UploadCloud className="mr-2 h-5 w-5" />
+                    )}
+                    {isUploading ? 'Uploading...' : 'Upload to Cloud'}
                 </Button>
             </div>
+             {uploadedVideoStorageUrl && (
+              <div className="mt-4 p-3 border border-primary/30 rounded-md bg-primary/10">
+                  <Label htmlFor="uploadedVideoLink" className="font-semibold text-primary">Cloud Video Link:</Label>
+                  <div className="flex items-center space-x-2 mt-1">
+                      <Input id="uploadedVideoLink" value={uploadedVideoStorageUrl} readOnly />
+                      <Button type="button" size="icon" variant="outline" onClick={() => {
+                          navigator.clipboard.writeText(uploadedVideoStorageUrl);
+                          toast({ title: "Link Copied!" });
+                      }}>
+                          <Copy className="h-4 w-4" />
+                      </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Copy this link and paste it into a tour step's media URL field.</p>
+              </div>
+            )}
           </div>
         )}
       </CardContent>
     </Card>
   );
 }
+
