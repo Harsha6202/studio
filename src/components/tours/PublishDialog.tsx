@@ -15,10 +15,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, AlertCircle } from 'lucide-react';
 import type { Tour } from '@/lib/types';
 import { useTourStore } from '@/hooks/useTourStore';
 import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface PublishDialogProps {
   tour: Tour;
@@ -31,19 +32,18 @@ export function PublishDialog({ tour, open, onOpenChange, children }: PublishDia
   const [isPublic, setIsPublic] = useState(tour.isPublic);
   const [shareLink, setShareLink] = useState('');
   const [copied, setCopied] = useState(false);
+  const [clipboardError, setClipboardError] = useState<string | null>(null);
   const { updateTour } = useTourStore();
   const { toast } = useToast();
 
   const getBaseUrl = () => {
-    // Prefer NEXT_PUBLIC_APP_BASE_URL if set, otherwise use window.location.origin
-    // Ensure this runs client-side where window is available or NEXT_PUBLIC_APP_BASE_URL is accessible
     if (process.env.NEXT_PUBLIC_APP_BASE_URL) {
-      return process.env.NEXT_PUBLIC_APP_BASE_URL.replace(/\/$/, ''); // Remove trailing slash if any
+      return process.env.NEXT_PUBLIC_APP_BASE_URL.replace(/\/$/, '');
     }
     if (typeof window !== 'undefined') {
       return window.location.origin;
     }
-    return ''; // Fallback, though ideally one of the above should work
+    return '';
   };
 
   useEffect(() => {
@@ -57,7 +57,7 @@ export function PublishDialog({ tour, open, onOpenChange, children }: PublishDia
         }
     } else if (!tour.isPublic) {
         setShareLink('');
-         if (tour.shareableLink) { // Clear shareable link if tour is not public
+         if (tour.shareableLink) {
             updateTour(tour.id, { shareableLink: '', isPublic: false });
         }
     }
@@ -73,7 +73,8 @@ export function PublishDialog({ tour, open, onOpenChange, children }: PublishDia
     }
     
     updateTour(tour.id, { isPublic: checked, shareableLink: newLink });
-    setShareLink(newLink); // Update local state immediately
+    setShareLink(newLink); 
+    setClipboardError(null); // Reset clipboard error on toggle
     
     toast({
       title: `Tour ${checked ? 'Published' : 'Unpublished'}`,
@@ -81,15 +82,24 @@ export function PublishDialog({ tour, open, onOpenChange, children }: PublishDia
     });
   };
 
-  const handleCopyToClipboard = () => {
+  const handleCopyToClipboard = async () => {
     if (shareLink) {
-      navigator.clipboard.writeText(shareLink).then(() => {
+      if (!navigator.clipboard || !navigator.clipboard.writeText) {
+        setClipboardError("Clipboard API not available. Please copy the link manually.");
+        toast({ title: "Clipboard Error", description: "Clipboard API not available in this browser or context. Please copy manually.", variant: "destructive" });
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(shareLink);
         setCopied(true);
+        setClipboardError(null);
         toast({ title: "Link Copied!", description: "Shareable link copied to clipboard." });
         setTimeout(() => setCopied(false), 2000);
-      }).catch(err => {
-        toast({ title: "Copy Failed", description: "Could not copy link to clipboard.", variant: "destructive" });
-      });
+      } catch (err) {
+        console.error("Failed to copy to clipboard:", err);
+        setClipboardError("Could not copy link. Please copy it manually. (This might be due to browser permissions.)");
+        toast({ title: "Copy Failed", description: "Could not copy link. See console for details or copy manually.", variant: "destructive" });
+      }
     }
   };
 
@@ -117,11 +127,19 @@ export function PublishDialog({ tour, open, onOpenChange, children }: PublishDia
             <div className="space-y-2">
               <Label htmlFor="shareable-link">Shareable Link</Label>
               <div className="flex items-center space-x-2">
-                <Input id="shareable-link" value={shareLink} readOnly />
+                <Input id="shareable-link" value={shareLink} readOnly onFocus={(e) => e.target.select()} />
                 <Button type="button" size="icon" variant="outline" onClick={handleCopyToClipboard} aria-label="Copy shareable link">
                   {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
                 </Button>
               </div>
+              {clipboardError && (
+                <Alert variant="destructive" className="mt-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    {clipboardError}
+                  </AlertDescription>
+                </Alert>
+              )}
               <p className="text-xs text-muted-foreground">Anyone with this link can view your tour.</p>
             </div>
           )}

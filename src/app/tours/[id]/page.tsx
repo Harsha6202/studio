@@ -1,3 +1,4 @@
+
 // src/app/tours/[id]/page.tsx
 "use client";
 import { useEffect, useState } from 'react';
@@ -6,13 +7,14 @@ import Image from 'next/image';
 import { useTourStore } from '@/hooks/useTourStore';
 import type { Tour, TourStep } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ArrowRight, Home, Share2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Home, Share2, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { inferIsVideoUrl, isPotentiallyValidMediaSrc } from '@/lib/utils';
+import { Alert, AlertDescription } from '@/components/ui/alert'; // Import Alert components
 
 export default function ViewTourPage() {
   const params = useParams();
@@ -23,6 +25,7 @@ export default function ViewTourPage() {
   const [tour, setTour] = useState<Tour | null | undefined>(undefined); // undefined for loading, null for not found
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   const tourId = Array.isArray(params.id) ? params.id[0] : params.id;
 
@@ -80,27 +83,57 @@ export default function ViewTourPage() {
   const handleNextStep = () => {
     if (currentStepIndex < tour.steps.length - 1) {
       setCurrentStepIndex(currentStepIndex + 1);
+      setShareError(null); // Clear share error on navigation
     }
   };
 
   const handlePrevStep = () => {
     if (currentStepIndex > 0) {
       setCurrentStepIndex(currentStepIndex - 1);
+      setShareError(null); // Clear share error on navigation
     }
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
+    setShareError(null);
+    const shareData = {
+      title: tour.title,
+      text: `Check out this product demo: ${tour.title}`,
+      url: window.location.href,
+    };
+
     if (navigator.share) {
-      navigator.share({
-        title: tour.title,
-        text: `Check out this product demo: ${tour.title}`,
-        url: window.location.href,
-      })
-      .then(() => toast({title: "Shared successfully!"}))
-      .catch((error) => toast({title: "Share failed", description: error.message, variant: "destructive"}));
+      try {
+        await navigator.share(shareData);
+        toast({title: "Shared successfully!"});
+      } catch (error) {
+        console.error('Error sharing:', error);
+        // Fallback to clipboard copy if navigator.share fails (e.g., on desktop or if user cancels)
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            await navigator.clipboard.writeText(window.location.href);
+            toast({title: "Link Copied!", description: "Demo link copied to clipboard. Sharing failed."});
+          } catch (copyError) {
+            setShareError("Could not share or copy link. Please copy the URL from your browser's address bar.");
+            toast({title: "Share Failed", description: "Could not share or copy link automatically. Please copy manually.", variant: "destructive"});
+          }
+        } else {
+            setShareError("Sharing not available. Please copy the URL from your browser's address bar.");
+            toast({title: "Share Failed", description: "Sharing not available. Please copy the URL manually.", variant: "destructive"});
+        }
+      }
+    } else if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        toast({title: "Link Copied!", description: "Demo link copied to clipboard."});
+      } catch (err) {
+        console.error("Failed to copy to clipboard:", err);
+        setShareError("Could not copy link. Please copy it manually. (This might be due to browser permissions.)");
+        toast({title: "Copy Failed", description: "Could not copy link to clipboard. Please copy manually.", variant: "destructive"});
+      }
     } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast({title: "Link Copied!", description: "Demo link copied to clipboard."});
+        setShareError("Sharing and automatic copying not supported. Please copy the URL from your browser's address bar.");
+        toast({title: "Action Failed", description: "Cannot share or copy automatically. Please copy the URL manually.", variant: "destructive"});
     }
   };
 
@@ -110,7 +143,7 @@ export default function ViewTourPage() {
         <div className="container mx-auto flex justify-between items-center max-w-5xl">
            <Button variant="outline" size="sm" asChild>
               <Link href="/dashboard">
-                <Home className="mr-2 h-4 w-4" /> Demo Platform Home
+                <Home className="mr-2 h-4 w-4" /> Product Demo Home
               </Link>
             </Button>
           <h1 className="text-xl md:text-2xl font-semibold text-foreground truncate px-2" title={tour.title}>{tour.title}</h1>
@@ -121,6 +154,12 @@ export default function ViewTourPage() {
       </header>
 
       <main className="flex-grow container mx-auto p-4 md:p-8 max-w-4xl">
+        {shareError && (
+            <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{shareError}</AlertDescription>
+            </Alert>
+        )}
         <Card className="overflow-hidden shadow-2xl">
           <div key={currentStepIndex} className="fade-in-step">
             <CardHeader className="bg-card/50 p-4 md:p-6">
