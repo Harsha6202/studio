@@ -16,6 +16,7 @@ export function ScreenRecorder() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
+  const [screenSharePolicyError, setScreenSharePolicyError] = useState(false); // New state for specific policy error
   
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
   const recordedVideoRef = useRef<HTMLVideoElement>(null);
@@ -23,6 +24,11 @@ export function ScreenRecorder() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   const requestPermissionsAndStartStream = async () => {
+    setHasPermission(null); // Reset permission state
+    setScreenSharePolicyError(false); // Reset policy error state on new attempt
+    setRecordedVideoUrl(null); 
+    setRecordedChunks([]);
+
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       mediaStreamRef.current = stream;
@@ -31,11 +37,8 @@ export function ScreenRecorder() {
       }
       setHasPermission(true);
       setIsStreaming(true);
-      setRecordedVideoUrl(null); // Clear previous recording
-      setRecordedChunks([]);
       toast({ title: "Screen Share Started", description: "Live preview active. Select a window/tab to record." });
 
-      // Handle when user stops sharing via browser UI
       stream.getVideoTracks()[0].onended = () => {
         stopScreenShare();
       };
@@ -44,18 +47,20 @@ export function ScreenRecorder() {
       console.error('Error accessing screen share:', error);
       setHasPermission(false);
       setIsStreaming(false);
+
       if (error.name === 'NotAllowedError') {
          toast({
           variant: 'destructive',
           title: 'Screen Share Access Denied',
           description: 'You denied permission for screen sharing. Please enable it if you want to use this feature.',
         });
-      } else if (error.message && (error.message.includes("disallowed by permissions policy") || error.message.includes("display-capture"))) {
+      } else if (error.message && (error.message.toLowerCase().includes("disallowed by permissions policy") || error.message.toLowerCase().includes("display-capture"))) {
+        setScreenSharePolicyError(true); // Set specific policy error state
         toast({
           variant: 'destructive',
           title: 'Screen Share Blocked by Policy',
           description: 'Screen sharing is disallowed by the current environment (e.g., iframe policy). This feature should work in a standalone deployment.',
-          duration: 10000, // Longer duration for this informative message
+          duration: 10000,
         });
       }
       else {
@@ -76,15 +81,24 @@ export function ScreenRecorder() {
       videoPreviewRef.current.srcObject = null;
     }
     if (isRecording) { 
-      handleStopRecording();
+      // Call handleStopRecording directly, ensuring it's defined or part of useCallback deps if needed
+      // For simplicity, assuming handleStopRecording is stable or this component manages its state correctly
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+      // Toast for recording stopped is in handleStopRecording or can be added here if distinct from general share stop
     }
     setIsStreaming(false);
-    // setHasPermission(null); // Keep permission state unless explicitly revoked or errored
-    toast({ title: "Screen Share Stopped" });
-  }, [isRecording]); // Removed handleStopRecording from deps to avoid potential loops, it's called directly.
+    // setHasPermission(null); // Keep permission state as false if it failed, or true if it succeeded then stopped.
+                           // Resetting to null might hide informative error messages if stop is called after an error.
+                           // If stop is only user-initiated after success, then null is fine.
+    if (hasPermission) { // Only toast "share stopped" if it was active.
+        toast({ title: "Screen Share Stopped" });
+    }
+  }, [isRecording, hasPermission]); 
   
   useEffect(() => {
-    // Cleanup function to stop tracks if component unmounts
     return () => {
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -109,7 +123,7 @@ export function ScreenRecorder() {
         'video/webm; codecs=vp8,opus',
         'video/webm; codecs=vp8',
         'video/webm',
-        'video/mp4', // MP4 might be an option if webm isn't well supported by a target, but often needs specific browser flags or isn't as standard for MediaRecorder
+        'video/mp4',
     ];
     
     let selectedMimeType = '';
@@ -124,7 +138,6 @@ export function ScreenRecorder() {
         toast({ title: "Recording Error", description: "No supported video MIME type found for recording.", variant: "destructive" });
         return;
     }
-    // console.log("Using MIME type for recording:", selectedMimeType);
 
     try {
         mediaRecorderRef.current = new MediaRecorder(mediaStreamRef.current, { mimeType: selectedMimeType });
@@ -155,7 +168,6 @@ export function ScreenRecorder() {
       mediaRecorderRef.current.stop();
     }
     setIsRecording(false);
-    // The useEffect above will handle blob creation once isRecording is false and chunks are available
     toast({ title: "Screen Recording Stopped" });
   };
 
@@ -168,9 +180,7 @@ export function ScreenRecorder() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(recordedVideoUrl); // Clean up Object URL
-      // setRecordedVideoUrl(null); // Optionally clear preview after download
-      // setRecordedChunks([]);
+      URL.revokeObjectURL(recordedVideoUrl); 
       toast({ title: "Recording Downloaded" });
     } else {
         toast({ title: "No Recording", description: "There is no recording to download.", variant: "destructive" });
@@ -180,7 +190,6 @@ export function ScreenRecorder() {
   const handleUseRecording = () => {
     if (recordedVideoUrl) {
       toast({ title: "Use Recording (Placeholder)", description: "This will eventually upload and link the recording to a tour step."});
-      // Example: pass `new Blob(recordedChunks, { type: mediaRecorderRef.current?.mimeType })` to an upload function
     } else {
       toast({ title: "No Recording", description: "Record something first!", variant: "destructive" });
     }
@@ -197,12 +206,17 @@ export function ScreenRecorder() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {hasPermission === false && !isStreaming && ( // Show only if explicitly denied and not streaming
+        {hasPermission === false && !isStreaming && (
           <Alert variant="destructive" className="mb-4">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Permission Issue</AlertTitle>
+            <AlertTitle>
+              {screenSharePolicyError ? "Screen Share Blocked by Policy" : "Screen Share Permission Issue"}
+            </AlertTitle>
             <AlertDescription>
-              StoryFlow needs access to your screen to record. Please check permissions or the browser console for more details.
+              {screenSharePolicyError 
+                ? "Screen sharing is disallowed by the current environment (e.g., due to iframe security policies). This feature is expected to work when the app is deployed as a standalone website."
+                : "StoryFlow needs access to your screen to record. You may have denied permission or another issue occurred. Please check browser permissions or the console."
+              }
             </AlertDescription>
           </Alert>
         )}
