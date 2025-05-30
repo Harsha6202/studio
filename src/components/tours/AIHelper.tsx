@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -52,9 +53,29 @@ export function AIHelper({ currentDescription, onApplyDescription, productName }
       } else {
         throw new Error("AI did not return a description.");
       }
-    } catch (error) {
+    } catch (error: any) { // Use 'any' to access potential digest property
       console.error("AI description generation error:", error);
-      toast({ title: "Error Generating Description", description: (error as Error).message || "An unknown error occurred.", variant: "destructive" });
+      let descriptionMessage = "An error occurred while generating the description.";
+      if (error.message) {
+        // Avoid showing the generic "An error occurred in the Server Components render" if we have a digest.
+        if (!error.digest || !error.message.includes("Server Components render")) {
+          descriptionMessage = error.message;
+        }
+      }
+      
+      if (error.digest) {
+        descriptionMessage = `A server error occurred. Digest: ${error.digest}. Please check Vercel logs for details.`;
+      } else if (descriptionMessage.includes("Server Components render")) {
+        // Fallback if digest is not present but it's a server component error
+         descriptionMessage = "An error occurred on the server. Please check Vercel logs for more details.";
+      }
+
+      toast({ 
+        title: "Error Generating Description", 
+        description: descriptionMessage, 
+        variant: "destructive",
+        duration: 9000, // Longer duration for error messages with digests
+      });
     } finally {
       setIsLoading(false);
     }
