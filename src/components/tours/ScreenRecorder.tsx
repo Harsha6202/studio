@@ -81,22 +81,16 @@ export function ScreenRecorder() {
       videoPreviewRef.current.srcObject = null;
     }
     if (isRecording) { 
-      // Call handleStopRecording directly, ensuring it's defined or part of useCallback deps if needed
-      // For simplicity, assuming handleStopRecording is stable or this component manages its state correctly
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
         mediaRecorderRef.current.stop();
       }
       setIsRecording(false);
-      // Toast for recording stopped is in handleStopRecording or can be added here if distinct from general share stop
     }
     setIsStreaming(false);
-    // setHasPermission(null); // Keep permission state as false if it failed, or true if it succeeded then stopped.
-                           // Resetting to null might hide informative error messages if stop is called after an error.
-                           // If stop is only user-initiated after success, then null is fine.
-    if (hasPermission) { // Only toast "share stopped" if it was active.
+    if (hasPermission) { 
         toast({ title: "Screen Share Stopped" });
     }
-  }, [isRecording, hasPermission]); 
+  }, [isRecording, hasPermission, toast]); 
   
   useEffect(() => {
     return () => {
