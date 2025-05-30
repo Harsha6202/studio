@@ -15,8 +15,8 @@ import { Separator } from '@/components/ui/separator';
 import { useTourStore } from '@/hooks/useTourStore';
 import type { Tour, TourStep } from '@/lib/types';
 import { AIHelper } from './AIHelper';
-import { StepList } from './StepList';
-import { ScreenRecorderPlaceholder } from './ScreenRecorderPlaceholder';
+// import { StepList } from './StepList'; // StepList integrated below
+import { ScreenRecorder } from './ScreenRecorder'; // Updated import
 import { PublishDialog } from './PublishDialog';
 import { Save, PlusCircle, Trash2, ArrowUp, ArrowDown, Eye } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -179,10 +179,14 @@ export function TourForm({ tourId }: TourFormProps) {
     if (targetIndex >= 0 && targetIndex < fields.length) {
       move(index, targetIndex);
       // Update order for all steps after move
-      const newOrderedSteps = fields.map((field, idx) => ({...field, order: idx}));
-      newOrderedSteps.forEach((step, idx) => {
-        setValue(`steps.${idx}.order`, idx);
-      });
+      const newOrderedSteps = fields.map((field, idx) => ({...field, order: idx})); // This line is problematic for react-hook-form state
+      // Correct way to update order in form state:
+      setValue('steps', fields.map((f, i) => ({...f, order: i})).sort((a,b) => { // get current field values
+          if(a.order === index) return {...a, order: targetIndex};
+          if(a.order === targetIndex) return {...a, order: index};
+          return a;
+      }).map((f,i) => ({...f, order: i}))); // then re-map to update the form value for 'steps'
+
     }
   };
 
@@ -230,11 +234,14 @@ export function TourForm({ tourId }: TourFormProps) {
           </div>
         </CardContent>
       </Card>
+      
+      {/* Screen Recorder Section - Moved out of Tour Steps for general workflow capture */}
+      <ScreenRecorder />
 
       <Card>
         <CardHeader>
           <CardTitle>Tour Steps</CardTitle>
-          <CardDescription>Add, edit, and reorder the steps for your interactive tour.</CardDescription>
+          <CardDescription>Add, edit, and reorder the steps for your interactive tour. Images uploaded here can also come from screen recordings.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {fields.map((field, index) => {
@@ -265,7 +272,7 @@ export function TourForm({ tourId }: TourFormProps) {
                   {errors.steps?.[index]?.title && <p className="text-sm text-destructive mt-1">{errors.steps[index]?.title?.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor={`steps.${index}.imageUrl`}>Image URL</Label>
+                  <Label htmlFor={`steps.${index}.imageUrl`}>Image URL (or from recording)</Label>
                   <Input id={`steps.${index}.imageUrl`} {...register(`steps.${index}.imageUrl`)} className="mt-1" placeholder="https://placehold.co/800x600.png"/>
                   {errors.steps?.[index]?.imageUrl && <p className="text-sm text-destructive mt-1">{errors.steps[index]?.imageUrl?.message}</p>}
                   {isPotentiallyValidSrc(stepImageUrl) && (
@@ -292,7 +299,6 @@ export function TourForm({ tourId }: TourFormProps) {
           <Button type="button" variant="outline" onClick={handleAddStep}>
             <PlusCircle className="mr-2 h-4 w-4" /> Add Step
           </Button>
-          <ScreenRecorderPlaceholder />
         </CardContent>
       </Card>
       
@@ -320,4 +326,3 @@ export function TourForm({ tourId }: TourFormProps) {
     </form>
   );
 }
-
