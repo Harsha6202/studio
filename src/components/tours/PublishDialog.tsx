@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -14,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Copy, Link as LinkIcon, Check } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import type { Tour } from '@/lib/types';
 import { useTourStore } from '@/hooks/useTourStore';
 import { useToast } from '@/hooks/use-toast';
@@ -33,33 +34,47 @@ export function PublishDialog({ tour, open, onOpenChange, children }: PublishDia
   const { updateTour } = useTourStore();
   const { toast } = useToast();
 
+  const getBaseUrl = () => {
+    // Prefer NEXT_PUBLIC_APP_BASE_URL if set, otherwise use window.location.origin
+    // Ensure this runs client-side where window is available or NEXT_PUBLIC_APP_BASE_URL is accessible
+    if (process.env.NEXT_PUBLIC_APP_BASE_URL) {
+      return process.env.NEXT_PUBLIC_APP_BASE_URL.replace(/\/$/, ''); // Remove trailing slash if any
+    }
+    if (typeof window !== 'undefined') {
+      return window.location.origin;
+    }
+    return ''; // Fallback, though ideally one of the above should work
+  };
+
   useEffect(() => {
     setIsPublic(tour.isPublic);
-    if (tour.isPublic && tour.id) {
-        // Ensure window is defined for client-side URL construction
-        if (typeof window !== 'undefined') {
-            const newLink = `${window.location.origin}/tours/${tour.id}`;
-            setShareLink(newLink);
-            // Update tour in store if link differs or wasn't set
-            if (tour.shareableLink !== newLink) {
-                updateTour(tour.id, { shareableLink: newLink });
-            }
+    const baseUrl = getBaseUrl();
+    if (tour.isPublic && tour.id && baseUrl) {
+        const newLink = `${baseUrl}/tours/${tour.id}`;
+        setShareLink(newLink);
+        if (tour.shareableLink !== newLink) {
+            updateTour(tour.id, { shareableLink: newLink, isPublic: tour.isPublic });
         }
-    } else {
+    } else if (!tour.isPublic) {
         setShareLink('');
+         if (tour.shareableLink) { // Clear shareable link if tour is not public
+            updateTour(tour.id, { shareableLink: '', isPublic: false });
+        }
     }
   }, [tour.isPublic, tour.id, tour.shareableLink, updateTour]);
 
   const handlePublishToggle = (checked: boolean) => {
     setIsPublic(checked);
     let newLink = '';
-    if (checked && tour.id) {
-        if (typeof window !== 'undefined') {
-            newLink = `${window.location.origin}/tours/${tour.id}`;
-        }
+    const baseUrl = getBaseUrl();
+
+    if (checked && tour.id && baseUrl) {
+        newLink = `${baseUrl}/tours/${tour.id}`;
     }
+    
     updateTour(tour.id, { isPublic: checked, shareableLink: newLink });
-    setShareLink(newLink);
+    setShareLink(newLink); // Update local state immediately
+    
     toast({
       title: `Tour ${checked ? 'Published' : 'Unpublished'}`,
       description: `Your tour is now ${checked ? 'public' : 'private'}.`,
@@ -92,6 +107,7 @@ export function PublishDialog({ tour, open, onOpenChange, children }: PublishDia
               id="publish-status"
               checked={isPublic}
               onCheckedChange={handlePublishToggle}
+              aria-label={isPublic ? 'Set tour to private' : 'Set tour to public'}
             />
             <Label htmlFor="publish-status" className="text-base">
               {isPublic ? 'Publicly Accessible' : 'Private (Only you can see)'}
@@ -102,14 +118,16 @@ export function PublishDialog({ tour, open, onOpenChange, children }: PublishDia
               <Label htmlFor="shareable-link">Shareable Link</Label>
               <div className="flex items-center space-x-2">
                 <Input id="shareable-link" value={shareLink} readOnly />
-                <Button type="button" size="icon" variant="outline" onClick={handleCopyToClipboard}>
+                <Button type="button" size="icon" variant="outline" onClick={handleCopyToClipboard} aria-label="Copy shareable link">
                   {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                  <span className="sr-only">Copy link</span>
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">Anyone with this link can view your tour.</p>
             </div>
           )}
+           {!isPublic && (
+             <p className="text-sm text-muted-foreground">Make the tour public to generate a shareable link.</p>
+           )}
         </div>
         <DialogFooter>
           <Button type="button" onClick={() => onOpenChange(false)}>Done</Button>
@@ -128,7 +146,6 @@ export function PublishDialog({ tour, open, onOpenChange, children }: PublishDia
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-        {/* This dialog is typically triggered by a button elsewhere, props.children allow custom trigger */}
         {dialogContent}
     </Dialog>
   );
