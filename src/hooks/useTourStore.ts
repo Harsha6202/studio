@@ -8,7 +8,7 @@ import { inferIsVideoUrl } from '@/lib/utils'; // Import the helper
 
 interface TourState {
   tours: Tour[];
-  addTour: (newTourData: Omit<Tour, 'id' | 'createdAt' | 'updatedAt' | 'steps' | 'shareableLink'> & { steps?: Partial<TourStep>[] }) => Tour;
+  addTour: (newTourData: Omit<Tour, 'id' | 'createdAt' | 'updatedAt' | 'steps' | 'shareableLink' | 'isPublic'> & { steps?: Partial<TourStep>[] }) => Tour;
   updateTour: (tourId: string, updates: Partial<Omit<Tour, 'id' | 'createdAt' | 'updatedAt'>>) => void;
   deleteTour: (tourId: string) => void;
   getTourById: (tourId: string) => Tour | undefined;
@@ -31,17 +31,19 @@ export const useTourStore = create<TourState>()(
         const now = new Date().toISOString();
         const newTour: Tour = {
           id: generateId(),
-          ...newTourData,
+          title: newTourData.title,
+          description: newTourData.description || '',
+          thumbnailUrl: newTourData.thumbnailUrl || `https://placehold.co/600x400.png`,
           steps: (newTourData.steps || []).map((step, index) => {
-            const imageUrl = step.imageUrl || `https://placehold.co/800x600.png?text=Step+${index + 1}`;
+            const imageUrl = step.imageUrl || `https://placehold.co/800x600.png`;
             return {
-              id: generateId(),
+              id: step.id || generateId(),
               imageUrl: imageUrl,
               mediaType: step.mediaType || (inferIsVideoUrl(imageUrl) ? 'video' : 'image'),
               title: step.title || `Step ${index + 1}`,
               description: step.description || '',
-              order: index,
-              annotations: (step.annotations || []).map(ann => ({ ...ann, id: generateId() })),
+              order: step.order !== undefined ? step.order : index,
+              annotations: (step.annotations || []).map(ann => ({ ...ann, id: ann.id || generateId() })),
             };
           }),
           isPublic: false,
@@ -70,7 +72,7 @@ export const useTourStore = create<TourState>()(
         set((state) => ({
           tours: state.tours.map((tour) => {
             if (tour.id === tourId) {
-              const imageUrl = newStepData.imageUrl || `https://placehold.co/800x600.png?text=New+Step`;
+              const imageUrl = newStepData.imageUrl || `https://placehold.co/800x600.png`;
               const newStep: TourStep = {
                 id: generateId(),
                 ...newStepData,
@@ -128,7 +130,7 @@ export const useTourStore = create<TourState>()(
               steps: tour.steps.map(step => 
                 step.id === stepId ? {
                   ...step,
-                  annotations: [...step.annotations, { ...newAnnotationData, id: generateId() }]
+                  annotations: [...(step.annotations || []), { ...newAnnotationData, id: generateId() }]
                 } : step
               ),
               updatedAt: new Date().toISOString()
@@ -144,7 +146,7 @@ export const useTourStore = create<TourState>()(
               steps: tour.steps.map(step =>
                 step.id === stepId ? {
                   ...step,
-                  annotations: step.annotations.map(ann => 
+                  annotations: (step.annotations || []).map(ann => 
                     ann.id === annotationId ? { ...ann, ...updates } : ann
                   )
                 } : step
@@ -162,7 +164,7 @@ export const useTourStore = create<TourState>()(
               steps: tour.steps.map(step =>
                 step.id === stepId ? {
                   ...step,
-                  annotations: step.annotations.filter(ann => ann.id !== annotationId)
+                  annotations: (step.annotations || []).filter(ann => ann.id !== annotationId)
                 } : step
               ),
               updatedAt: new Date().toISOString()
@@ -174,6 +176,10 @@ export const useTourStore = create<TourState>()(
     {
       name: 'storyflow-tours-storage', // name of the item in the storage (must be unique)
       storage: createJSONStorage(() => localStorage), // (optional) by default, 'localStorage' is used
+      // Partialize to avoid storing functions if any, though typically not an issue with simple state
+      // partialize: (state) => ({ tours: state.tours }),
     }
   )
 );
+
+    

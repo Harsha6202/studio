@@ -1,3 +1,4 @@
+
 // src/app/page.tsx
 "use client"; // Required for useAuth hook
 
@@ -166,3 +167,5 @@ export default function LandingPage() {
     </div>
   );
 }
+
+    

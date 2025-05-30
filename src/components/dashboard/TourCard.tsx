@@ -1,3 +1,4 @@
+
 "use client";
 
 import Image from 'next/image';
@@ -40,14 +41,14 @@ export function TourCard({ tour, viewMode = 'grid' }: TourCardProps) {
     deleteTour(tour.id);
   };
   
-  const lastUpdated = formatDistanceToNow(new Date(tour.updatedAt), { addSuffix: true });
+  const lastUpdated = tour.updatedAt ? formatDistanceToNow(new Date(tour.updatedAt), { addSuffix: true }) : 'N/A';
 
   if (viewMode === 'list') {
     return (
       <Card className="flex flex-col md:flex-row w-full hover:shadow-lg transition-shadow duration-200">
         <div className="md:w-1/4 relative h-48 md:h-auto">
           <Image
-            src={tour.thumbnailUrl || `https://placehold.co/300x200.png?text=${encodeURIComponent(tour.title)}`}
+            src={tour.thumbnailUrl || `https://placehold.co/300x200.png`}
             alt={tour.title}
             layout="fill"
             objectFit="cover"
@@ -120,7 +121,7 @@ export function TourCard({ tour, viewMode = 'grid' }: TourCardProps) {
       <CardHeader className="relative p-0">
         <Link href={`/tours/${tour.id}/edit`} className="block">
           <Image
-            src={tour.thumbnailUrl || `https://placehold.co/600x400.png?text=${encodeURIComponent(tour.title)}`}
+            src={tour.thumbnailUrl || `https://placehold.co/600x400.png`}
             alt={tour.title}
             width={600}
             height={400}
@@ -192,3 +193,5 @@ export function TourCard({ tour, viewMode = 'grid' }: TourCardProps) {
     </Card>
   );
 }
+
+    

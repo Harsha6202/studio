@@ -144,17 +144,17 @@ export default function ViewTourPage() {
                 </video>
               ) : (
                 <Image
-                  src={stepMediaUrl || "https://placehold.co/1280x720.png?text=Step+Image"}
+                  src={stepMediaUrl || "https://placehold.co/1280x720.png"}
                   alt={currentStep.title}
-                  fill // Changed from layout="fill" to fill
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" // Example sizes, adjust as needed
-                  className="object-contain" // Changed from objectFit="contain"
+                  fill 
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" 
+                  className="object-contain" 
                   priority={currentStepIndex === 0}
                   data-ai-hint="app screenshot"
                 />
               )}
               {/* Annotations overlay can be added here */}
-              {currentStep.annotations?.map(annotation => (
+              {(currentStep.annotations || []).map(annotation => (
                   <div 
                     key={annotation.id} 
                     className="absolute p-2 bg-black/70 text-white text-xs rounded shadow-lg"
@@ -203,3 +203,5 @@ export default function ViewTourPage() {
     </div>
   );
 }
+
+    

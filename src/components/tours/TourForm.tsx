@@ -13,31 +13,52 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useTourStore } from '@/hooks/useTourStore';
-import type { Tour, TourStep, MediaType } from '@/lib/types';
+import type { Tour, TourStep, MediaType, Annotation } from '@/lib/types';
 import { AIHelper } from './AIHelper';
 // import { StepList } from './StepList'; // StepList integrated below
 import { ScreenRecorder } from './ScreenRecorder'; // Updated import
 import { PublishDialog } from './PublishDialog';
-import { Save, PlusCircle, Trash2, ArrowUp, ArrowDown, Eye } from 'lucide-react';
+import { Save, PlusCircle, Trash2, ArrowUp, ArrowDown, Eye, MessageSquarePlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
 import Link from 'next/link';
 import { inferIsVideoUrl, isPotentiallyValidMediaSrc } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+
+
+const annotationSchema = z.object({
+  id: z.string().optional(),
+  text: z.string().min(1, "Annotation text cannot be empty"),
+  position: z.object({
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+  }),
+});
 
 const tourStepSchema = z.object({
   id: z.string().optional(), // Existing steps will have an ID
   title: z.string().min(1, "Step title is required"),
   description: z.string().optional(),
-  imageUrl: z.string().url("Must be a valid URL or data URI").or(z.string().startsWith("data:")).or(z.string().startsWith("blob:")).or(z.literal("")),
+  imageUrl: z.string().url("Must be a valid URL or data URI").or(z.string().startsWith("data:")).or(z.string().startsWith("blob:")).or(z.literal("")).or(z.null()),
   mediaType: z.enum(['image', 'video']).optional(),
   order: z.number(),
-  // Annotations can be added later if complex schema is needed
+  annotations: z.array(annotationSchema).optional(),
 });
 
 const tourFormSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
   description: z.string().optional(),
-  thumbnailUrl: z.string().url("Must be a valid URL for thumbnail").or(z.string().startsWith("data:image")).or(z.literal("")).optional(),
+  thumbnailUrl: z.string().url("Must be a valid URL for thumbnail").or(z.string().startsWith("data:image")).or(z.literal("")).or(z.null()).optional(),
   steps: z.array(tourStepSchema).min(1, "At least one step is required for a tour"),
 });
 
@@ -50,7 +71,7 @@ interface TourFormProps {
 export function TourForm({ tourId }: TourFormProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const { addTour, getTourById, updateTour, addStepToTour, updateStepInTour, deleteStepFromTour } = useTourStore();
+  const { addTour, getTourById, updateTour, addStepToTour, updateStepInTour, deleteStepFromTour, addAnnotationToStep, updateAnnotationInStep, deleteAnnotationFromStep } = useTourStore();
   const [currentTour, setCurrentTour] = useState<Tour | null>(null);
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
   
@@ -61,12 +82,12 @@ export function TourForm({ tourId }: TourFormProps) {
     steps: [],
   };
 
-  const { control, register, handleSubmit, reset, setValue, watch, formState: { errors, isSubmitting } } = useForm<TourFormData>({
+  const { control, register, handleSubmit, reset, setValue, watch, getValues, formState: { errors, isSubmitting } } = useForm<TourFormData>({
     resolver: zodResolver(tourFormSchema),
     defaultValues,
   });
 
-  const { fields, append, remove, move } = useFieldArray({
+  const { fields, append, remove, move, update: updateFieldArray } = useFieldArray({
     control,
     name: "steps",
   });
@@ -83,7 +104,7 @@ export function TourForm({ tourId }: TourFormProps) {
           title: tour.title,
           description: tour.description,
           thumbnailUrl: tour.thumbnailUrl || '',
-          steps: tour.steps.sort((a,b) => a.order - b.order).map(step => { // ensure steps are ordered
+          steps: tour.steps.sort((a,b) => a.order - b.order).map(step => { 
             const imageUrl = step.imageUrl || '';
             return {
               id: step.id,
@@ -92,6 +113,7 @@ export function TourForm({ tourId }: TourFormProps) {
               imageUrl: imageUrl,
               mediaType: step.mediaType || (inferIsVideoUrl(imageUrl) ? 'video' : 'image'),
               order: step.order,
+              annotations: step.annotations || [],
             };
           }),
         });
@@ -104,9 +126,10 @@ export function TourForm({ tourId }: TourFormProps) {
              append({ 
                title: 'Step 1', 
                description: '', 
-               imageUrl: `https://placehold.co/800x600.png?text=Step+1`, 
+               imageUrl: `https://placehold.co/800x600.png`, 
                mediaType: 'image', 
-               order: 0 
+               order: 0,
+               annotations: []
               });
         }
     }
@@ -116,8 +139,9 @@ export function TourForm({ tourId }: TourFormProps) {
     try {
       const processedSteps = data.steps.map((step, index) => ({
         ...step,
-        order: index, // Ensure order is sequential
+        order: index, 
         mediaType: step.mediaType || (inferIsVideoUrl(step.imageUrl) ? 'video' : 'image'),
+        annotations: step.annotations || [],
       }));
 
       if (tourId) { 
@@ -128,48 +152,57 @@ export function TourForm({ tourId }: TourFormProps) {
           title: data.title, 
           description: data.description,
           thumbnailUrl: data.thumbnailUrl,
-          // steps will be handled by individual step operations
         });
-
+        
         // Sync steps: update existing, add new, remove deleted
-        const newStepIds = new Set(processedSteps.filter(s => s.id).map(s => s.id));
+        const newStepDataMap = new Map(processedSteps.map(s => [s.id, s]));
+
         existingTour.steps.forEach(existingStep => {
-          if (!newStepIds.has(existingStep.id)) {
+          if (!newStepDataMap.has(existingStep.id)) {
             deleteStepFromTour(tourId, existingStep.id);
           }
         });
 
-        processedSteps.forEach(stepData => {
-          if (stepData.id && existingTour.steps.find(s => s.id === stepData.id)) { 
-            updateStepInTour(tourId, stepData.id, { 
-              title: stepData.title, 
-              description: stepData.description, 
-              imageUrl: stepData.imageUrl,
-              mediaType: stepData.mediaType,
-              order: stepData.order 
-            });
+        processedSteps.forEach((stepData, index) => {
+          const currentStepInStore = existingTour.steps.find(s => s.id === stepData.id);
+          const payload = { 
+            title: stepData.title, 
+            description: stepData.description, 
+            imageUrl: stepData.imageUrl,
+            mediaType: stepData.mediaType,
+            order: index, // Crucial: use the current loop index for order
+            annotations: stepData.annotations || [],
+          };
+
+          if (stepData.id && currentStepInStore) { 
+            updateStepInTour(tourId, stepData.id, payload);
           } else { 
              addStepToTour(tourId, { 
-              title: stepData.title, 
-              description: stepData.description, 
-              imageUrl: stepData.imageUrl,
-              mediaType: stepData.mediaType,
-              // order is handled by addStepToTour
+              title: payload.title, 
+              description: payload.description, 
+              imageUrl: payload.imageUrl,
+              mediaType: payload.mediaType,
+              annotations: payload.annotations,
+              // order is set by addStepToTour or implicitly by array position
             });
           }
         });
         
         toast({ title: "Success", description: "Tour updated successfully!" });
-        const refreshedTour = getTourById(tourId);
+        const refreshedTour = getTourById(tourId); // Fetch the latest state
         if (refreshedTour) {
             setCurrentTour(refreshedTour);
-             // Manually re-sync form state if needed, especially for orders or newly added step IDs
-            reset({
-                ...refreshedTour,
-                steps: refreshedTour.steps.sort((a,b) => a.order - b.order).map(s => ({
+            reset({ // Re-sync form with the latest state, especially step IDs and orders
+                title: refreshedTour.title,
+                description: refreshedTour.description,
+                thumbnailUrl: refreshedTour.thumbnailUrl || '',
+                steps: refreshedTour.steps.sort((a, b) => a.order - b.order).map(s => ({
                     ...s,
+                    id: s.id,
                     description: s.description || '',
-                    mediaType: s.mediaType || (inferIsVideoUrl(s.imageUrl) ? 'video' : 'image')
+                    imageUrl: s.imageUrl || '',
+                    mediaType: s.mediaType || (inferIsVideoUrl(s.imageUrl) ? 'video' : 'image'),
+                    annotations: s.annotations || [],
                 }))
             });
         }
@@ -178,8 +211,8 @@ export function TourForm({ tourId }: TourFormProps) {
         const newTourData = {
           title: data.title,
           description: data.description || '',
-          thumbnailUrl: data.thumbnailUrl || `https://placehold.co/600x400.png?text=${encodeURIComponent(data.title)}`,
-          steps: processedSteps, 
+          thumbnailUrl: data.thumbnailUrl || `https://placehold.co/600x400.png`,
+          steps: processedSteps.map(s => ({...s, id: undefined})), // Ensure IDs are not passed for new steps if any were generated client-side prematurely
         };
         const createdTour = addTour(newTourData);
         toast({ title: "Success", description: "Tour created! You can now add more steps." });
@@ -195,9 +228,10 @@ export function TourForm({ tourId }: TourFormProps) {
     append({ 
       title: `Step ${newOrder + 1}`, 
       description: '', 
-      imageUrl: `https://placehold.co/800x600.png?text=Step+${newOrder + 1}`, 
+      imageUrl: `https://placehold.co/800x600.png`, 
       mediaType: 'image', 
-      order: newOrder 
+      order: newOrder,
+      annotations: []
     });
   };
   
@@ -205,22 +239,45 @@ export function TourForm({ tourId }: TourFormProps) {
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex >= 0 && targetIndex < fields.length) {
       move(index, targetIndex);
-      // Update order for all steps after move
-      const newOrderedSteps = fields.map((_, idx) => {
-        const currentFields = watch('steps'); // get current form state
-        if (idx === index) return { ...currentFields[targetIndex], order: idx };
-        if (idx === targetIndex) return { ...currentFields[index], order: idx };
-        return { ...currentFields[idx], order: idx };
-      });
-      // Sort by new visual order then re-assign sequential order
-      const visuallyOrdered = Array.from(Array(fields.length).keys()).map(i => {
-         if (i === index) return fields[targetIndex];
-         if (i === targetIndex) return fields[index];
-         return fields[i];
-      });
-      setValue('steps', visuallyOrdered.map((step, newIdx) => ({...step, order: newIdx}) ));
+      // After moving, re-evaluate and set the 'order' property for all steps
+      const currentSteps = getValues('steps');
+      const newOrderedSteps = currentSteps.map((step, idx) => ({ ...step, order: idx }));
+      setValue('steps', newOrderedSteps, { shouldDirty: true });
     }
   };
+
+  const handleAddAnnotation = (stepIndex: number) => {
+    const stepId = getValues(`steps.${stepIndex}.id`);
+    if (!tourId || !stepId) {
+        toast({ title: "Cannot Add Annotation", description: "Step must be saved first or tour must exist.", variant: "destructive" });
+        return;
+    }
+    // For now, add with default text/position. A modal or inline form would be better.
+    const newAnnotation: Omit<Annotation, 'id'> = {
+      text: "New Annotation",
+      position: { x: 0.1, y: 0.1 }, // Default position
+    };
+    addAnnotationToStep(tourId, stepId, newAnnotation);
+    // Re-fetch and reset form to reflect new annotation in store if needed, or directly update form state
+    const updatedStep = getTourById(tourId)?.steps.find(s => s.id === stepId);
+    if (updatedStep) {
+        updateFieldArray(stepIndex, { ...getValues(`steps.${stepIndex}`), annotations: updatedStep.annotations });
+    }
+  };
+
+  const handleDeleteAnnotation = (stepIndex: number, annotationId: string) => {
+    const stepId = getValues(`steps.${stepIndex}.id`);
+     if (!tourId || !stepId) {
+        toast({ title: "Error", description: "Tour or Step ID missing.", variant: "destructive" });
+        return;
+    }
+    deleteAnnotationFromStep(tourId, stepId, annotationId);
+    const updatedStep = getTourById(tourId)?.steps.find(s => s.id === stepId);
+     if (updatedStep) {
+        updateFieldArray(stepIndex, { ...getValues(`steps.${stepIndex}`), annotations: updatedStep.annotations });
+    }
+  };
+
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
@@ -261,7 +318,13 @@ export function TourForm({ tourId }: TourFormProps) {
                     width={200} height={120} 
                     className="mt-2 rounded object-cover"
                     data-ai-hint="abstract background"
-                    onError={(e) => e.currentTarget.style.display='none'}/>
+                    onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display='none';
+                        setValue('thumbnailUrl', ''); // Clear if image fails to load
+                        toast({variant: "destructive", title: "Invalid Thumbnail URL", description: "The thumbnail URL could not be loaded."})
+                    }}
+                  />
             )}
           </div>
         </CardContent>
@@ -278,9 +341,10 @@ export function TourForm({ tourId }: TourFormProps) {
           {fields.map((field, index) => {
             const stepMediaUrl = watchedSteps[index]?.imageUrl;
             const stepMediaType = watchedSteps[index]?.mediaType || (inferIsVideoUrl(stepMediaUrl) ? 'video' : 'image');
+            const stepAnnotations = watchedSteps[index]?.annotations || [];
             
             return (
-            <Card key={field.id} className="bg-background/50">
+            <Card key={field.id || `step-${index}`} className="bg-background/50">
               <CardContent className="p-4 space-y-3">
                 <div className="flex justify-between items-center">
                   <h4 className="font-semibold text-lg">Step {index + 1}: {watch(`steps.${index}.title`)}</h4>
@@ -312,8 +376,9 @@ export function TourForm({ tourId }: TourFormProps) {
                     className="mt-1" 
                     placeholder="https://example.com/image.png or /video.mp4 or blob:..."
                     onChange={(e) => {
-                        setValue(`steps.${index}.imageUrl`, e.target.value);
-                        setValue(`steps.${index}.mediaType`, inferIsVideoUrl(e.target.value) ? 'video' : 'image');
+                        const newUrl = e.target.value;
+                        setValue(`steps.${index}.imageUrl`, newUrl);
+                        setValue(`steps.${index}.mediaType`, inferIsVideoUrl(newUrl) ? 'video' : 'image');
                     }}
                    />
                   {errors.steps?.[index]?.imageUrl && <p className="text-sm text-destructive mt-1">{errors.steps[index]?.imageUrl?.message}</p>}
@@ -322,21 +387,31 @@ export function TourForm({ tourId }: TourFormProps) {
                     <div className="mt-2 border rounded overflow-hidden max-w-xs">
                       {stepMediaType === 'video' ? (
                         <video 
-                            src={stepMediaUrl} 
+                            src={stepMediaUrl!} 
                             controls 
                             className="aspect-video w-full object-contain bg-muted"
-                            onError={(e) => (e.currentTarget as HTMLVideoElement).style.display='none'}
+                             onError={(e) => {
+                                const target = e.target as HTMLVideoElement;
+                                target.style.display='none';
+                                setValue(`steps.${index}.imageUrl`, '');
+                                toast({variant: "destructive", title: "Invalid Media URL", description: `Video for Step ${index+1} could not be loaded.`})
+                            }}
                         >
                             Your browser does not support the video tag.
                         </video>
                       ) : (
                         <Image 
-                            src={stepMediaUrl} 
+                            src={stepMediaUrl!} 
                             alt={`Step ${index + 1} preview`} 
                             width={300} height={180} 
                             className="object-contain"
                             data-ai-hint="ui screenshot"
-                            onError={(e) => (e.currentTarget as HTMLImageElement).style.display='none'} 
+                             onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display='none';
+                                setValue(`steps.${index}.imageUrl`, '');
+                                toast({variant: "destructive", title: "Invalid Media URL", description: `Image for Step ${index+1} could not be loaded.`})
+                            }}
                         />
                       )}
                     </div>
@@ -346,7 +421,75 @@ export function TourForm({ tourId }: TourFormProps) {
                   <Label htmlFor={`steps.${index}.description`}>Step Description/Instructions</Label>
                   <Textarea id={`steps.${index}.description`} {...register(`steps.${index}.description`)} className="mt-1" rows={2} />
                 </div>
-                {/* <AnnotationPlaceholder tourId={tourId} stepId={field.id} /> */}
+                
+                {/* Annotations Section */}
+                <div className="mt-3 p-3 border border-dashed rounded-md">
+                    <div className="flex justify-between items-center mb-2">
+                        <Label className="text-base">Annotations</Label>
+                        <Button 
+                            type="button" 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => handleAddAnnotation(index)}
+                            disabled={!tourId || !getValues(`steps.${index}.id`)} // Disable if tour/step not saved
+                            title={(!tourId || !getValues(`steps.${index}.id`)) ? "Save tour and step first to add annotations" : "Add annotation"}
+                        >
+                            <MessageSquarePlus className="mr-2 h-4 w-4" /> Add Annotation
+                        </Button>
+                    </div>
+                    {stepAnnotations.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No annotations for this step yet.</p>
+                    ) : (
+                        <div className="space-y-2">
+                        {stepAnnotations.map((annotation, annIndex) => (
+                            <Card key={annotation.id || `ann-${annIndex}`} className="p-2 bg-muted/50">
+                                <div className="flex justify-between items-start">
+                                    <Textarea
+                                        defaultValue={annotation.text}
+                                        placeholder="Annotation text..."
+                                        className="text-xs flex-grow mr-2"
+                                        rows={1}
+                                        onBlur={(e) => {
+                                            const newText = e.target.value;
+                                            if (tourId && field.id && annotation.id && newText !== annotation.text) {
+                                                updateAnnotationInStep(tourId, field.id, annotation.id, { text: newText });
+                                                const currentAnns = getValues(`steps.${index}.annotations`) || [];
+                                                const newAnns = currentAnns.map(a => a.id === annotation.id ? {...a, text: newText} : a);
+                                                setValue(`steps.${index}.annotations`, newAnns, { shouldDirty: true });
+                                            }
+                                        }}
+                                    />
+                                     <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                         <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-destructive">
+                                            <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Delete Annotation?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            Are you sure you want to delete this annotation: "{annotation.text.substring(0, 30)}..."?
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                          <AlertDialogAction onClick={() => handleDeleteAnnotation(index, annotation.id!)}>Delete</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    Position: (x: {annotation.position.x.toFixed(2)}, y: {annotation.position.y.toFixed(2)})
+                                    {/* TODO: Add inputs to change position */}
+                                </p>
+                            </Card>
+                        ))}
+                        </div>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-2">Visual placement of annotations on the image/video is coming soon!</p>
+                    </div>
+
               </CardContent>
             </Card>
           )})}
@@ -382,3 +525,5 @@ export function TourForm({ tourId }: TourFormProps) {
     </form>
   );
 }
+
+    
